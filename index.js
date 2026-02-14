@@ -181,15 +181,27 @@ function convertConditionalContentToMarkdown(content) {
   });
 }
 
+// Convert Requirements component to a markdown link using the url attribute
+function convertRequirementsToMarkdown(content) {
+  // Match <Requirements ... url="..." /> (self-closing)
+  // Handle multiline and various attribute orders
+  return content.replace(
+    /<Requirements(?:[^>]*?)url="([^"]+)"[^>]*?\/?>/gi,
+    (match, url) => {
+      return `[Read the requirements](${url})`;
+    }
+  );
+}
+
 // Unwrap MDX components by removing their tags but preserving inner content
 function unwrapMdxComponents(content) {
   // List of MDX components to unwrap (keeps growing as we find more)
   // Note: ConditionalContent is handled separately by convertConditionalContentToMarkdown
+  // Note: Requirements is handled separately by convertRequirementsToMarkdown
   const components = [
     'ModelSelector',
     'ModelDropdownTabs',
-    'InstallModular',
-    'Requirements'
+    'InstallModular'
   ];
 
   for (const comp of components) {
@@ -272,7 +284,10 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 5. Convert ConditionalContent to labeled sections
   content = convertConditionalContentToMarkdown(content);
 
-  // 6. Unwrap MDX components (remove tags, preserve inner content)
+  // 6. Convert Requirements component to link
+  content = convertRequirementsToMarkdown(content);
+
+  // 7. Unwrap MDX components (remove tags, preserve inner content)
   content = unwrapMdxComponents(content);
 
   // 7. Remove div tags (preserve inner content)
