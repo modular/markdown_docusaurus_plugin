@@ -36,12 +36,8 @@ function convertTabsToMarkdown(content) {
       // Use label if available, otherwise fall back to value
       const displayLabel = label || value || 'Tab';
 
-      // Clean up indentation from the tab content
-      const cleanContent = itemContent
-        .split('\n')
-        .map(line => line.replace(/^\s{4}/, '')) // Remove 4-space indentation
-        .join('\n')
-        .trim();
+      // Preserve the content as-is (don't strip indentation - it may be meaningful for lists)
+      const cleanContent = itemContent.trim();
 
       result.push(`**${displayLabel}:**\n\n${cleanContent}`);
     }
