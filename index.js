@@ -50,10 +50,27 @@ function convertDetailsToMarkdown(content) {
   });
 }
 
+// Extract title from YAML frontmatter
+function extractTitleFromFrontmatter(content) {
+  const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (frontmatterMatch) {
+    const frontmatter = frontmatterMatch[1];
+    // Match title: value (with optional quotes)
+    const titleMatch = frontmatter.match(/^title:\s*["']?([^"'\n]+)["']?\s*$/m);
+    if (titleMatch) {
+      return titleMatch[1].trim();
+    }
+  }
+  return null;
+}
+
 // Clean markdown content for raw display - remove MDX/Docusaurus-specific syntax
 function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // Get the directory path for this file (relative to docs root)
   const fileDir = filepath.replace(/[^/]*$/, ''); // Remove filename, keep directory
+
+  // Extract title from frontmatter before stripping it
+  const title = extractTitleFromFrontmatter(content);
 
   // 1. Strip YAML front matter (--- at start, content, then ---)
   content = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
@@ -112,6 +129,11 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
 
   // 11. Remove any leading blank lines
   content = content.replace(/^\s*\n/, '');
+
+  // 12. Prepend title from frontmatter as H1 heading
+  if (title) {
+    content = `# ${title}\n\n${content}`;
+  }
 
   return content;
 }
