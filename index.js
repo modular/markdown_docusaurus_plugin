@@ -69,6 +69,19 @@ function convertTabsToMarkdown(content) {
   return currentContent;
 }
 
+// Convert DynamicCode components to fenced code blocks
+function convertDynamicCodeToMarkdown(content) {
+  // Match <DynamicCode language="sh">...</DynamicCode>
+  return content.replace(
+    /<DynamicCode\s+language="([^"]+)"[^>]*>([\s\S]*?)<\/DynamicCode>/gi,
+    (match, language, code) => {
+      // Clean up the code content (trim whitespace)
+      const cleanCode = code.trim();
+      return '```' + language + '\n' + cleanCode + '\n```';
+    }
+  );
+}
+
 // Convert details/summary components to readable markdown format
 function convertDetailsToMarkdown(content) {
   const detailsPattern = /<details>\s*<summary>(<strong>)?([^<]+)(<\/strong>)?<\/summary>([\s\S]*?)<\/details>/g;
@@ -114,7 +127,10 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 2. Remove import statements (MDX imports)
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
-  // 3. Convert HTML images to markdown
+  // 3. Convert DynamicCode components to fenced code blocks
+  content = convertDynamicCodeToMarkdown(content);
+
+  // 4. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
     /<p align="center">\s*\n?\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\} alt="([^"]*)"(?:\s+width="[^"]*")?\s*\/>\s*\n?\s*<\/p>/g,
