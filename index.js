@@ -124,12 +124,36 @@ function convertExportsToMarkdown(content) {
 
 // Convert DynamicCode components to fenced code blocks
 function convertDynamicCodeToMarkdown(content) {
-  // Match <DynamicCode language="sh">...</DynamicCode>
+  // Match <DynamicCode language="sh" ...>{`...`}</DynamicCode>
   return content.replace(
     /<DynamicCode\s+language="([^"]+)"[^>]*>([\s\S]*?)<\/DynamicCode>/gi,
     (match, language, code) => {
-      // Clean up the code content (trim whitespace)
-      const cleanCode = code.trim();
+      // Clean up the code content:
+      // 1. Remove outer { and } (JSX expression wrapper)
+      // 2. Remove backticks (template literal)
+      // 3. Normalize indentation
+      let cleanCode = code.trim();
+      
+      // Remove leading { and trailing }
+      cleanCode = cleanCode.replace(/^\s*\{\s*/, '').replace(/\s*\}\s*$/, '');
+      
+      // Remove backticks (template literal delimiters)
+      cleanCode = cleanCode.replace(/^`/, '').replace(/`$/, '');
+      
+      // Normalize indentation: find minimum indent and remove it from all lines
+      const lines = cleanCode.split('\n');
+      const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+      if (nonEmptyLines.length > 0) {
+        const minIndent = Math.min(...nonEmptyLines.map(line => {
+          const match = line.match(/^(\s*)/);
+          return match ? match[1].length : 0;
+        }));
+        if (minIndent > 0) {
+          cleanCode = lines.map(line => line.slice(minIndent)).join('\n');
+        }
+      }
+      
+      cleanCode = cleanCode.trim();
       return '```' + language + '\n' + cleanCode + '\n```';
     }
   );
