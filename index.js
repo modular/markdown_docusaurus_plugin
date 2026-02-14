@@ -69,6 +69,50 @@ function convertTabsToMarkdown(content) {
   return currentContent;
 }
 
+// Parse JavaScript array objects into an array of key-value objects
+function parseArrayObjects(arrayContent) {
+  const objects = [];
+  const objRegex = /\{([^}]+)\}/g;
+  let objMatch;
+  while ((objMatch = objRegex.exec(arrayContent)) !== null) {
+    const obj = {};
+    // Match property: 'value' or property: "value" or property: value (for booleans/numbers)
+    const propRegex = /(\w+)\s*:\s*(?:'([^']*)'|"([^"]*)"|([^\s,}]+))/g;
+    let propMatch;
+    while ((propMatch = propRegex.exec(objMatch[1])) !== null) {
+      const key = propMatch[1];
+      const value = propMatch[2] || propMatch[3] || propMatch[4];
+      // Skip internal properties like 'default: true'
+      if (key !== 'default') {
+        obj[key] = value;
+      }
+    }
+    if (Object.keys(obj).length > 0) objects.push(obj);
+  }
+  return objects;
+}
+
+// Convert JavaScript export const arrays to readable markdown bullet lists
+function convertExportsToMarkdown(content) {
+  // Match: export const name = [ ... ];
+  return content.replace(
+    /export\s+const\s+(\w+)\s*=\s*\[([\s\S]*?)\];/g,
+    (match, varName, arrayContent) => {
+      const items = parseArrayObjects(arrayContent);
+      if (items.length === 0) return '';
+
+      let md = `**${varName}:**\n\n`;
+      items.forEach(obj => {
+        const pairs = Object.entries(obj)
+          .map(([k, v]) => `**${k}:** ${v}`)
+          .join(', ');
+        md += `- ${pairs}\n`;
+      });
+      return md + '\n';
+    }
+  );
+}
+
 // Convert DynamicCode components to fenced code blocks
 function convertDynamicCodeToMarkdown(content) {
   // Match <DynamicCode language="sh">...</DynamicCode>
@@ -130,7 +174,10 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 3. Convert DynamicCode components to fenced code blocks
   content = convertDynamicCodeToMarkdown(content);
 
-  // 4. Convert HTML images to markdown
+  // 4. Convert JavaScript export arrays to readable bullet lists
+  content = convertExportsToMarkdown(content);
+
+  // 5. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
     /<p align="center">\s*\n?\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\} alt="([^"]*)"(?:\s+width="[^"]*")?\s*\/>\s*\n?\s*<\/p>/g,
