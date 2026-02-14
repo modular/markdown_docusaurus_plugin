@@ -6,18 +6,33 @@ const path = require('path');
  * This allows users to view markdown source by appending .md to URLs
  */
 
+// Helper function to extract attribute value from a tag string
+function extractAttribute(tagString, attrName) {
+  const regex = new RegExp(`${attrName}=["']([^"']*)["']`);
+  const match = tagString.match(regex);
+  return match ? match[1] : null;
+}
+
 // Convert Tabs/TabItem components to readable markdown format
 function convertTabsToMarkdown(content) {
   const tabsPattern = /<Tabs[^>]*>([\s\S]*?)<\/Tabs>/g;
 
   return content.replace(tabsPattern, (fullMatch, tabsContent) => {
-    const tabItemPattern = /<TabItem\s+[^>]*value="([^"]*)"[^>]*label="([^"]*)"[^>]*>([\s\S]*?)<\/TabItem>/g;
+    // Match TabItem with any attribute order by capturing the entire opening tag
+    const tabItemPattern = /<TabItem\s+([^>]*)>([\s\S]*?)<\/TabItem>/g;
 
     let result = [];
     let match;
 
     while ((match = tabItemPattern.exec(tabsContent)) !== null) {
-      const [, value, label, itemContent] = match;
+      const [, attributes, itemContent] = match;
+      
+      // Extract label and value from attributes (works regardless of order)
+      const label = extractAttribute(attributes, 'label');
+      const value = extractAttribute(attributes, 'value');
+      
+      // Use label if available, otherwise fall back to value
+      const displayLabel = label || value || 'Tab';
 
       // Clean up indentation from the tab content
       const cleanContent = itemContent
@@ -26,7 +41,7 @@ function convertTabsToMarkdown(content) {
         .join('\n')
         .trim();
 
-      result.push(`**${label}:**\n\n${cleanContent}`);
+      result.push(`**${displayLabel}:**\n\n${cleanContent}`);
     }
 
     return result.join('\n\n---\n\n');
