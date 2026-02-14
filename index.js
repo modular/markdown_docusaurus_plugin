@@ -212,6 +212,12 @@ function removeDivTags(content) {
   return content;
 }
 
+// Collapse multiple consecutive blank lines into a single blank line
+function collapseBlankLines(content) {
+  // Replace 3+ consecutive newlines (2+ blank lines) with just 2 newlines (1 blank line)
+  return content.replace(/\n{3,}/g, '\n\n');
+}
+
 // Convert details/summary components to readable markdown format
 function convertDetailsToMarkdown(content) {
   const detailsPattern = /<details>\s*<summary>(<strong>)?([^<]+)(<\/strong>)?<\/summary>([\s\S]*?)<\/details>/g;
@@ -328,6 +334,9 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   if (title) {
     content = `# ${title}\n\n${content}`;
   }
+
+  // 13. Collapse multiple consecutive blank lines into single blank line
+  content = collapseBlankLines(content);
 
   return content;
 }
