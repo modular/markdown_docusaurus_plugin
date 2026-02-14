@@ -224,6 +224,12 @@ function removeDivTags(content) {
   return content;
 }
 
+// Remove MDX/JSX comments {/* ... */}
+function removeMdxComments(content) {
+  // Match {/* ... */} including multiline comments
+  return content.replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+}
+
 // Collapse multiple consecutive blank lines into a single blank line
 function collapseBlankLines(content) {
   // Replace 3+ consecutive newlines (2+ blank lines) with just 2 newlines (1 blank line)
@@ -275,7 +281,10 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 2. Remove import statements (MDX imports)
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
-  // 3. Convert DynamicCode components to fenced code blocks
+  // 3. Remove MDX/JSX comments {/* ... */}
+  content = removeMdxComments(content);
+
+  // 4. Convert DynamicCode components to fenced code blocks
   content = convertDynamicCodeToMarkdown(content);
 
   // 4. Convert JavaScript export arrays to readable bullet lists
