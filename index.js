@@ -51,7 +51,7 @@ function convertDetailsToMarkdown(content) {
 }
 
 // Clean markdown content for raw display - remove MDX/Docusaurus-specific syntax
-function cleanMarkdownForDisplay(content, filepath) {
+function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // Get the directory path for this file (relative to docs root)
   const fileDir = filepath.replace(/[^/]*$/, ''); // Remove filename, keep directory
 
@@ -98,13 +98,15 @@ function cleanMarkdownForDisplay(content, filepath) {
   // This runs AFTER Tabs/details conversion to preserve their content
   content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
 
-  // 10. Convert relative image paths to absolute paths from /docs/ root (Claude style)
+  // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
   content = content.replace(
     /!\[([^\]]*)\]\((\.\/)?img\/([^)]+)\)/g,
     (match, alt, relPrefix, filename) => {
-      // Convert to absolute path: /docs/path/to/file/img/filename
-      return `![${alt}](/docs/${fileDir}img/${filename})`;
+      // Convert to absolute path using configurable docsPath
+      // Ensure docsPath ends with / for proper path joining
+      const normalizedDocsPath = docsPath.endsWith('/') ? docsPath : docsPath + '/';
+      return `![${alt}](${normalizedDocsPath}${fileDir}img/${filename})`;
     }
   );
 
@@ -180,7 +182,11 @@ async function copyImageDirectories(docsDir, buildDir) {
   return copiedCount;
 }
 
-module.exports = function markdownSourcePlugin(context, options) {
+module.exports = function markdownSourcePlugin(context, options = {}) {
+  // Configurable options with defaults for backwards compatibility
+  const docsPath = options.docsPath || '/docs/';
+  const docsDirName = options.docsDir || 'docs';
+
   return {
     name: 'markdown-source-plugin',
 
@@ -189,8 +195,14 @@ module.exports = function markdownSourcePlugin(context, options) {
       return path.resolve(__dirname, './theme');
     },
 
+    // Expose config to client-side via globalData
+    async contentLoaded({ actions }) {
+      const { setGlobalData } = actions;
+      setGlobalData({ docsPath });
+    },
+
     async postBuild({ outDir }) {
-      const docsDir = path.join(context.siteDir, 'docs');
+      const docsDir = path.join(context.siteDir, docsDirName);
       const buildDir = outDir;
 
       console.log('[markdown-source-plugin] Copying markdown source files...');
@@ -213,7 +225,7 @@ module.exports = function markdownSourcePlugin(context, options) {
           const content = await fs.readFile(sourcePath, 'utf8');
 
           // Clean markdown for raw display
-          const cleanedContent = cleanMarkdownForDisplay(content, mdFile);
+          const cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
 
           // Write the cleaned content
           await fs.writeFile(destPath, cleanedContent, 'utf8');

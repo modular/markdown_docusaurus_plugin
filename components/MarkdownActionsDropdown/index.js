@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-export default function MarkdownActionsDropdown() {
+// Accept docsPath as prop with default fallback for backwards compatibility
+export default function MarkdownActionsDropdown({ docsPath = '/docs/' }) {
   const [copied, setCopied] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -8,8 +9,8 @@ export default function MarkdownActionsDropdown() {
   // Get pathname from window.location
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
 
-  // Only show on docs pages (not blog, homepage, etc.)
-  const isDocsPage = currentPath.startsWith('/docs/');
+  // Only show on docs pages (using configurable docsPath)
+  const isDocsPage = currentPath.startsWith(docsPath);
 
   // Handle click outside to close dropdown
   useEffect(() => {

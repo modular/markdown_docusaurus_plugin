@@ -1,11 +1,16 @@
 // theme/Root.js - Plugin-provided theme component
 import React, { useEffect } from 'react';
 import { useLocation } from '@docusaurus/router';
+import { usePluginData } from '@docusaurus/useGlobalData';
 import { createRoot } from 'react-dom/client';
 import MarkdownActionsDropdown from '../components/MarkdownActionsDropdown';
 
 export default function Root({ children }) {
   const { hash, pathname } = useLocation();
+  
+  // Read config from globalData with fallback for backwards compatibility
+  const pluginData = usePluginData('markdown-source-plugin') ?? {};
+  const docsPath = pluginData.docsPath || '/docs/';
 
   useEffect(() => {
     if (hash) {
@@ -39,8 +44,8 @@ export default function Root({ children }) {
   // Inject dropdown button into article header
   useEffect(() => {
     const injectDropdown = () => {
-      // Only inject on docs pages
-      if (!pathname.startsWith('/docs/')) return;
+      // Only inject on docs pages (using configurable docsPath)
+      if (!pathname.startsWith(docsPath)) return;
 
       const articleHeader = document.querySelector('article .markdown header');
       if (!articleHeader) return;
@@ -56,8 +61,9 @@ export default function Root({ children }) {
       articleHeader.appendChild(container);
 
       // Render React component into container
+      // Pass docsPath as prop since component is rendered outside Docusaurus context
       const root = createRoot(container);
-      root.render(<MarkdownActionsDropdown />);
+      root.render(<MarkdownActionsDropdown docsPath={docsPath} />);
     };
 
     // Try to inject after a short delay to ensure DOM is ready
@@ -65,7 +71,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectDropdown, delay);
     });
-  }, [pathname]);
+  }, [pathname, docsPath]);
 
   return <>{children}</>;
 }
