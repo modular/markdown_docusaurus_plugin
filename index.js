@@ -135,11 +135,32 @@ function convertDynamicCodeToMarkdown(content) {
   );
 }
 
+// Convert ConditionalContent components to labeled markdown sections
+function convertConditionalContentToMarkdown(content) {
+  // Match <ConditionalContent ... condition={(model) => model.includes('Value')} > ... </ConditionalContent>
+  const pattern = /<ConditionalContent(?:[^>{]|\{[^}]*\})*>\s*([\s\S]*?)<\/ConditionalContent>/gi;
+
+  return content.replace(pattern, (match, innerContent) => {
+    // Extract the condition value from the tag (e.g., 'Llama' from model.includes('Llama'))
+    const conditionMatch = match.match(/\.includes\s*\(\s*['"]([^'"]+)['"]\s*\)/);
+    
+    if (conditionMatch) {
+      const conditionValue = conditionMatch[1];
+      // Clean up the inner content
+      const cleanContent = innerContent.trim();
+      return `**${conditionValue} model:**\n\n${cleanContent}\n`;
+    }
+    
+    // If no condition found, just return the inner content
+    return innerContent.trim();
+  });
+}
+
 // Unwrap MDX components by removing their tags but preserving inner content
 function unwrapMdxComponents(content) {
   // List of MDX components to unwrap (keeps growing as we find more)
+  // Note: ConditionalContent is handled separately by convertConditionalContentToMarkdown
   const components = [
-    'ConditionalContent',
     'ModelSelector',
     'ModelDropdownTabs',
     'InstallModular',
@@ -217,10 +238,13 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 4. Convert JavaScript export arrays to readable bullet lists
   content = convertExportsToMarkdown(content);
 
-  // 5. Unwrap MDX components (remove tags, preserve inner content)
+  // 5. Convert ConditionalContent to labeled sections
+  content = convertConditionalContentToMarkdown(content);
+
+  // 6. Unwrap MDX components (remove tags, preserve inner content)
   content = unwrapMdxComponents(content);
 
-  // 6. Remove div tags (preserve inner content)
+  // 7. Remove div tags (preserve inner content)
   content = removeDivTags(content);
 
   // 7. Convert HTML images to markdown
