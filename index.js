@@ -148,7 +148,9 @@ function unwrapMdxComponents(content) {
 
   for (const comp of components) {
     // Remove opening tags with any attributes
-    content = content.replace(new RegExp(`<${comp}[^>]*>`, 'gi'), '');
+    // Handle JSX expressions in attributes that may contain > inside {...}
+    // Pattern: match <Component, then any non->{, or {...} blocks, then >
+    content = content.replace(new RegExp(`<${comp}(?:[^>{]|\\{[^}]*\\})*>`, 'gis'), '');
     // Remove closing tags
     content = content.replace(new RegExp(`</${comp}>`, 'gi'), '');
   }
