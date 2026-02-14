@@ -126,6 +126,35 @@ function convertDynamicCodeToMarkdown(content) {
   );
 }
 
+// Unwrap MDX components by removing their tags but preserving inner content
+function unwrapMdxComponents(content) {
+  // List of MDX components to unwrap (keeps growing as we find more)
+  const components = [
+    'ConditionalContent',
+    'ModelSelector',
+    'ModelDropdownTabs',
+    'InstallModular',
+    'Requirements'
+  ];
+
+  for (const comp of components) {
+    // Remove opening tags with any attributes
+    content = content.replace(new RegExp(`<${comp}[^>]*>`, 'gi'), '');
+    // Remove closing tags
+    content = content.replace(new RegExp(`</${comp}>`, 'gi'), '');
+  }
+  return content;
+}
+
+// Remove div tags while preserving their inner content
+function removeDivTags(content) {
+  // Remove opening div tags with any attributes (including className, style, etc.)
+  content = content.replace(/<div[^>]*>/gi, '');
+  // Remove closing div tags
+  content = content.replace(/<\/div>/gi, '');
+  return content;
+}
+
 // Convert details/summary components to readable markdown format
 function convertDetailsToMarkdown(content) {
   const detailsPattern = /<details>\s*<summary>(<strong>)?([^<]+)(<\/strong>)?<\/summary>([\s\S]*?)<\/details>/g;
@@ -177,7 +206,13 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 4. Convert JavaScript export arrays to readable bullet lists
   content = convertExportsToMarkdown(content);
 
-  // 5. Convert HTML images to markdown
+  // 5. Unwrap MDX components (remove tags, preserve inner content)
+  content = unwrapMdxComponents(content);
+
+  // 6. Remove div tags (preserve inner content)
+  content = removeDivTags(content);
+
+  // 7. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
     /<p align="center">\s*\n?\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\} alt="([^"]*)"(?:\s+width="[^"]*")?\s*\/>\s*\n?\s*<\/p>/g,
