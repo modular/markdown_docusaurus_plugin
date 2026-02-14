@@ -14,10 +14,12 @@ function extractAttribute(tagString, attrName) {
 }
 
 // Convert Tabs/TabItem components to readable markdown format
+// Handles both standard <Tabs> and custom tab components like <ModelDropdownTabs>
 function convertTabsToMarkdown(content) {
-  const tabsPattern = /<Tabs[^>]*>([\s\S]*?)<\/Tabs>/g;
+  // Match standard Tabs and any custom component ending in "Tabs"
+  const tabsPattern = /<(\w*Tabs)[^>]*>([\s\S]*?)<\/\1>/g;
 
-  return content.replace(tabsPattern, (fullMatch, tabsContent) => {
+  return content.replace(tabsPattern, (fullMatch, tagName, tabsContent) => {
     // Match TabItem with any attribute order by capturing the entire opening tag
     const tabItemPattern = /<TabItem\s+([^>]*)>([\s\S]*?)<\/TabItem>/g;
 
