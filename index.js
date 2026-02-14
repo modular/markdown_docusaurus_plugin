@@ -314,28 +314,45 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 2. Remove import statements (MDX imports)
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
-  // 3. Remove MDX/JSX comments {/* ... */}
+  // 3. Protect code blocks and inline code from MDX processing
+  // This must happen early, before any component processing
+  // First protect fenced code blocks (triple backticks)
+  const codeBlockPlaceholders = [];
+  content = content.replace(/```[\s\S]*?```/g, (match) => {
+    const placeholder = `__CODE_BLOCK_${codeBlockPlaceholders.length}__`;
+    codeBlockPlaceholders.push(match);
+    return placeholder;
+  });
+  // Then protect inline code (single backticks)
+  const inlineCodePlaceholders = [];
+  content = content.replace(/`([^`]+)`/g, (match, code) => {
+    const placeholder = `__INLINE_CODE_${inlineCodePlaceholders.length}__`;
+    inlineCodePlaceholders.push(match);
+    return placeholder;
+  });
+
+  // 4. Remove MDX/JSX comments {/* ... */}
   content = removeMdxComments(content);
 
-  // 4. Convert DynamicCode components to fenced code blocks
+  // 5. Convert DynamicCode components to fenced code blocks
   content = convertDynamicCodeToMarkdown(content);
 
-  // 4. Convert JavaScript export arrays to readable bullet lists
+  // 6. Convert JavaScript export arrays to readable bullet lists
   content = convertExportsToMarkdown(content);
 
-  // 5. Convert ConditionalContent to labeled sections
+  // 7. Convert ConditionalContent to labeled sections
   content = convertConditionalContentToMarkdown(content);
 
-  // 6. Convert Requirements component to link
+  // 8. Convert Requirements component to link
   content = convertRequirementsToMarkdown(content);
 
-  // 7. Unwrap MDX components (remove tags, preserve inner content)
+  // 9. Unwrap MDX components (remove tags, preserve inner content)
   content = unwrapMdxComponents(content);
 
-  // 7. Remove div tags (preserve inner content)
+  // 10. Remove div tags (preserve inner content)
   content = removeDivTags(content);
 
-  // 7. Convert HTML images to markdown
+  // 11. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
     /<p align="center">\s*\n?\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\} alt="([^"]*)"(?:\s+width="[^"]*")?\s*\/>\s*\n?\s*<\/p>/g,
@@ -346,33 +363,33 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
     }
   );
 
-  // 4. Convert YouTube iframes to text links
+  // 12. Convert YouTube iframes to text links
   content = content.replace(
     /<iframe[^>]*src="https:\/\/www\.youtube\.com\/embed\/([a-zA-Z0-9_-]+)[^"]*"[^>]*title="([^"]*)"[^>]*>[\s\S]*?<\/iframe>/g,
     'Watch the video: [$2](https://www.youtube.com/watch?v=$1)'
   );
 
-  // 5. Clean HTML5 video tags - keep HTML but add fallback text
+  // 13. Clean HTML5 video tags - keep HTML but add fallback text
   content = content.replace(
     /<video[^>]*>\s*<source src=["']([^"']+)["'][^>]*>\s*<\/video>/g,
     '<video controls>\n  <source src="$1" type="video/mp4" />\n  <p>Video demonstration: $1</p>\n</video>'
   );
 
-  // 6. Remove <Head> components with structured data (SEO metadata not needed in raw markdown)
+  // 14. Remove <Head> components with structured data (SEO metadata not needed in raw markdown)
   content = content.replace(/<Head>[\s\S]*?<\/Head>/g, '');
 
-  // 7. Convert Tabs/TabItem components to readable markdown (preserve content)
+  // 15. Convert Tabs/TabItem components to readable markdown (preserve content)
   content = convertTabsToMarkdown(content);
 
-  // 8. Convert details/summary components to readable markdown (preserve content)
+  // 16. Convert details/summary components to readable markdown (preserve content)
   content = convertDetailsToMarkdown(content);
 
-  // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
+  // 17. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
   // This runs AFTER Tabs/details conversion to preserve their content
   content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
 
-  // 10. Convert relative image paths to absolute paths from docs root
+  // 18. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
   content = content.replace(
     /!\[([^\]]*)\]\((\.\/)?img\/([^)]+)\)/g,
@@ -384,15 +401,23 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
     }
   );
 
-  // 11. Remove any leading blank lines
+  // 19. Remove any leading blank lines
   content = content.replace(/^\s*\n/, '');
 
-  // 12. Prepend title from frontmatter as H1 heading
+  // 20. Prepend title from frontmatter as H1 heading
   if (title) {
     content = `# ${title}\n\n${content}`;
   }
 
-  // 13. Collapse multiple consecutive blank lines into single blank line
+  // 21. Restore inline code and code blocks
+  inlineCodePlaceholders.forEach((code, i) => {
+    content = content.replace(`__INLINE_CODE_${i}__`, code);
+  });
+  codeBlockPlaceholders.forEach((code, i) => {
+    content = content.replace(`__CODE_BLOCK_${i}__`, code);
+  });
+
+  // 22. Collapse multiple consecutive blank lines into single blank line
   content = collapseBlankLines(content);
 
   return content;
