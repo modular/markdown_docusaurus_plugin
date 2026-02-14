@@ -36,12 +36,21 @@ function convertTabsToMarkdown(content) {
       // Use label if available, otherwise fall back to value
       const displayLabel = label || value || 'Tab';
 
-      // Clean up indentation from the tab content
-      const cleanContent = itemContent
-        .split('\n')
-        .map(line => line.replace(/^\s{4}/, '')) // Remove 4-space indentation
-        .join('\n')
-        .trim();
+      // Normalize indentation: find minimum indent and remove it from all lines
+      // This ensures all TabItem content is left-aligned consistently
+      const lines = itemContent.split('\n');
+      const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+      let cleanContent = itemContent;
+      if (nonEmptyLines.length > 0) {
+        const minIndent = Math.min(...nonEmptyLines.map(line => {
+          const match = line.match(/^(\s*)/);
+          return match ? match[1].length : 0;
+        }));
+        if (minIndent > 0) {
+          cleanContent = lines.map(line => line.slice(minIndent)).join('\n');
+        }
+      }
+      cleanContent = cleanContent.trim();
 
       result.push(`**${displayLabel}:**\n\n${cleanContent}`);
     }
@@ -169,15 +178,28 @@ function convertConditionalContentToMarkdown(content) {
     // Extract the condition value from the tag (e.g., 'Llama' from model.includes('Llama'))
     const conditionMatch = match.match(/\.includes\s*\(\s*['"]([^'"]+)['"]\s*\)/);
     
+    // Normalize indentation: find minimum indent and remove it from all lines
+    const lines = innerContent.split('\n');
+    const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+    let cleanContent = innerContent;
+    if (nonEmptyLines.length > 0) {
+      const minIndent = Math.min(...nonEmptyLines.map(line => {
+        const m = line.match(/^(\s*)/);
+        return m ? m[1].length : 0;
+      }));
+      if (minIndent > 0) {
+        cleanContent = lines.map(line => line.slice(minIndent)).join('\n');
+      }
+    }
+    cleanContent = cleanContent.trim();
+    
     if (conditionMatch) {
       const conditionValue = conditionMatch[1];
-      // Clean up the inner content
-      const cleanContent = innerContent.trim();
       return `**${conditionValue} model:**\n\n${cleanContent}\n`;
     }
     
     // If no condition found, just return the inner content
-    return innerContent.trim();
+    return cleanContent;
   });
 }
 
