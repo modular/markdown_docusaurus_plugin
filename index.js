@@ -38,16 +38,23 @@ function convertTabsToMarkdown(content) {
 
       // Normalize indentation: find minimum indent and remove it from all lines
       // This ensures all TabItem content is left-aligned consistently
+      // Exclude lines that are already at column 0 (from previously converted nested content)
       const lines = itemContent.split('\n');
-      const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+      const indentedNonEmptyLines = lines.filter(line => line.trim().length > 0 && /^\s/.test(line));
       let cleanContent = itemContent;
-      if (nonEmptyLines.length > 0) {
-        const minIndent = Math.min(...nonEmptyLines.map(line => {
+      if (indentedNonEmptyLines.length > 0) {
+        const minIndent = Math.min(...indentedNonEmptyLines.map(line => {
           const match = line.match(/^(\s*)/);
           return match ? match[1].length : 0;
         }));
         if (minIndent > 0) {
-          cleanContent = lines.map(line => line.slice(minIndent)).join('\n');
+          cleanContent = lines.map(line => {
+            // Only remove indent from lines that have it
+            if (line.length >= minIndent && /^\s/.test(line)) {
+              return line.slice(minIndent);
+            }
+            return line;
+          }).join('\n');
         }
       }
       cleanContent = cleanContent.trim();
