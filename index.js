@@ -125,8 +125,9 @@ function convertExportsToMarkdown(content) {
 // Convert DynamicCode components to fenced code blocks
 function convertDynamicCodeToMarkdown(content) {
   // Match <DynamicCode language="sh" ...>{`...`}</DynamicCode>
+  // Also capture any leading whitespace so we can remove it
   return content.replace(
-    /<DynamicCode\s+language="([^"]+)"[^>]*>([\s\S]*?)<\/DynamicCode>/gi,
+    /^[ \t]*<DynamicCode\s+language="([^"]+)"[^>]*>([\s\S]*?)<\/DynamicCode>/gim,
     (match, language, code) => {
       // Clean up the code content:
       // 1. Remove outer { and } (JSX expression wrapper)
