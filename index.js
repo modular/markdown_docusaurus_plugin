@@ -116,7 +116,7 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   return content;
 }
 
-// Recursively find all markdown files in a directory
+// Recursively find all markdown files in a directory (both .md and .mdx)
 function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
   const files = fs.readdirSync(dir);
 
@@ -126,7 +126,7 @@ function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
 
     if (stat.isDirectory()) {
       findMarkdownFiles(filePath, fileList, baseDir);
-    } else if (file.endsWith('.md')) {
+    } else if (file.endsWith('.md') || file.endsWith('.mdx')) {
       // Store relative path from base directory
       const relativePath = path.relative(baseDir, filePath);
       fileList.push(relativePath);
@@ -215,7 +215,9 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       // Process each markdown file to build directory
       for (const mdFile of mdFiles) {
         const sourcePath = path.join(docsDir, mdFile);
-        const destPath = path.join(buildDir, mdFile);
+        // Convert .mdx to .md for the destination (URLs use .md extension)
+        const destFile = mdFile.replace(/\.mdx$/, '.md');
+        const destPath = path.join(buildDir, destFile);
 
         try {
           // Ensure destination directory exists
@@ -231,7 +233,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           await fs.writeFile(destPath, cleanedContent, 'utf8');
           copiedCount++;
 
-          console.log(`  ✓ Processed: ${mdFile}`);
+          console.log(`  ✓ Processed: ${mdFile} -> ${destFile}`);
         } catch (error) {
           console.error(`  ✗ Failed to process ${mdFile}:`, error.message);
         }
