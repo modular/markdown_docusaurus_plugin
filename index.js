@@ -19,7 +19,7 @@ function convertTabsToMarkdown(content) {
   // Match standard Tabs and any custom component ending in "Tabs"
   const tabsPattern = /<(\w*Tabs)[^>]*>([\s\S]*?)<\/\1>/g;
 
-  return content.replace(tabsPattern, (fullMatch, tagName, tabsContent) => {
+  const processTabsBlock = (fullMatch, tagName, tabsContent) => {
     // Match TabItem with any attribute order by capturing the entire opening tag
     const tabItemPattern = /<TabItem\s+([^>]*)>([\s\S]*?)<\/TabItem>/g;
 
@@ -47,7 +47,18 @@ function convertTabsToMarkdown(content) {
     }
 
     return result.join('\n\n---\n\n');
-  });
+  };
+
+  // Process repeatedly to handle nested tabs (innermost first)
+  let previousContent;
+  let currentContent = content;
+  
+  do {
+    previousContent = currentContent;
+    currentContent = currentContent.replace(tabsPattern, processTabsBlock);
+  } while (currentContent !== previousContent);
+
+  return currentContent;
 }
 
 // Convert details/summary components to readable markdown format
