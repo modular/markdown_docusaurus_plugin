@@ -1,8 +1,19 @@
-// theme/Root.js - Plugin-provided theme component
+/**
+ * theme/Root.js - Plugin-provided theme component
+ * 
+ * This component wraps the entire Docusaurus app and injects the markdown
+ * copy widget into article headers. It uses DOM injection via createRoot
+ * rather than theme swizzling to avoid requiring user configuration.
+ * 
+ * Note: Components rendered via createRoot are outside the main React tree,
+ * so hooks like usePluginData won't work directly in child components.
+ * Config must be passed as props.
+ */
 import React, { useEffect } from 'react';
 import { useLocation } from '@docusaurus/router';
 import { usePluginData } from '@docusaurus/useGlobalData';
 import { createRoot } from 'react-dom/client';
+import MarkdownCopyButton from '../components/MarkdownCopyButton';
 import MarkdownActionsDropdown from '../components/MarkdownActionsDropdown';
 
 export default function Root({ children }) {
@@ -11,7 +22,9 @@ export default function Root({ children }) {
   // Read config from globalData with fallback for backwards compatibility
   const pluginData = usePluginData('markdown-source-plugin') ?? {};
   const docsPath = pluginData.docsPath || '/docs/';
+  const widgetType = pluginData.widgetType || 'button';
 
+  // Scroll to hash on page load (handles deep links)
   useEffect(() => {
     if (hash) {
       const scrollToElement = () => {
@@ -24,27 +37,20 @@ export default function Root({ children }) {
         return false;
       };
 
-      // Try immediately
       if (!scrollToElement()) {
-        // If element not found, wait for images and content to load
         const timeouts = [100, 300, 500, 1000];
-
         timeouts.forEach(delay => {
-          setTimeout(() => {
-            scrollToElement();
-          }, delay);
+          setTimeout(scrollToElement, delay);
         });
-
-        // Also wait for images to load
         window.addEventListener('load', scrollToElement, { once: true });
       }
     }
   }, [hash]);
 
-  // Inject dropdown button into article header
+  // Inject widget into article header
   useEffect(() => {
-    const injectDropdown = () => {
-      // Only inject on docs pages (using configurable docsPath)
+    const injectWidget = () => {
+      // Only inject on docs pages
       if (!pathname.startsWith(docsPath)) return;
 
       const articleHeader = document.querySelector('article .markdown header');
@@ -53,25 +59,28 @@ export default function Root({ children }) {
       // Check if already injected
       if (articleHeader.querySelector('.markdown-actions-container')) return;
 
-      // Create container for the dropdown
+      // Create container for the widget
       const container = document.createElement('div');
       container.className = 'markdown-actions-container';
-
-      // Append to header
       articleHeader.appendChild(container);
 
+      // Select component based on widgetType config
+      const WidgetComponent = widgetType === 'dropdown' 
+        ? MarkdownActionsDropdown 
+        : MarkdownCopyButton;
+
       // Render React component into container
-      // Pass docsPath as prop since component is rendered outside Docusaurus context
+      // Pass config as props since component is outside Docusaurus React tree
       const root = createRoot(container);
-      root.render(<MarkdownActionsDropdown docsPath={docsPath} />);
+      root.render(<WidgetComponent docsPath={docsPath} />);
     };
 
-    // Try to inject after a short delay to ensure DOM is ready
+    // Try to inject after short delays to ensure DOM is ready
     const timeouts = [0, 100, 300];
     timeouts.forEach(delay => {
-      setTimeout(injectDropdown, delay);
+      setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath]);
+  }, [pathname, docsPath, widgetType]);
 
   return <>{children}</>;
 }

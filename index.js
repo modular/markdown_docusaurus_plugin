@@ -208,6 +208,8 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
+  // Widget type: 'button' (simple copy button) or 'dropdown' (with multiple actions)
+  const widgetType = options.widgetType || 'button';
 
   return {
     name: 'markdown-source-plugin',
@@ -220,7 +222,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath });
+      setGlobalData({ docsPath, widgetType });
     },
 
     async postBuild({ outDir }) {
