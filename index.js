@@ -151,15 +151,19 @@ function convertDynamicCodeToMarkdown(content) {
       cleanCode = cleanCode.replace(/^`/, '').replace(/`$/, '');
       
       // Normalize indentation: find minimum indent and remove it from all lines
+      // Skip the first non-empty line when calculating min indent (it may have 0 indent
+      // because it's right after the opening backtick in template literals)
       const lines = cleanCode.split('\n');
       const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-      if (nonEmptyLines.length > 0) {
-        const minIndent = Math.min(...nonEmptyLines.map(line => {
+      if (nonEmptyLines.length > 1) {
+        // Calculate min indent from all lines EXCEPT the first non-empty line
+        const restLines = nonEmptyLines.slice(1);
+        const minIndent = Math.min(...restLines.map(line => {
           const match = line.match(/^(\s*)/);
           return match ? match[1].length : 0;
         }));
         if (minIndent > 0) {
-          cleanCode = lines.map(line => line.slice(minIndent)).join('\n');
+          cleanCode = lines.map(line => line.slice(Math.min(minIndent, line.search(/\S|$/) ))).join('\n');
         }
       }
       
