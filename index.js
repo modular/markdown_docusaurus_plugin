@@ -58,6 +58,14 @@ function convertTabsToMarkdown(content) {
     currentContent = currentContent.replace(tabsPattern, processTabsBlock);
   } while (currentContent !== previousContent);
 
+  // Clean up any leftover TabItem or Tabs closing tags that weren't matched
+  currentContent = currentContent.replace(/<\/TabItem>/g, '');
+  currentContent = currentContent.replace(/<\/\w*Tabs>/g, '');
+  
+  // Also clean up orphaned opening tags (in case content wasn't properly structured)
+  currentContent = currentContent.replace(/<TabItem\s+[^>]*>/g, '');
+  currentContent = currentContent.replace(/<\w*Tabs[^>]*>/g, '');
+
   return currentContent;
 }
 
