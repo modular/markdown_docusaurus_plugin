@@ -93,9 +93,10 @@ function parseArrayObjects(arrayContent) {
 }
 
 // Convert JavaScript export const arrays to readable markdown bullet lists
+// Arrays of objects are converted to lists; other exports are removed
 function convertExportsToMarkdown(content) {
-  // Match: export const name = [ ... ];
-  return content.replace(
+  // First, convert array exports to bullet lists: export const name = [ ... ];
+  content = content.replace(
     /export\s+const\s+(\w+)\s*=\s*\[([\s\S]*?)\];/g,
     (match, varName, arrayContent) => {
       const items = parseArrayObjects(arrayContent);
@@ -111,6 +112,14 @@ function convertExportsToMarkdown(content) {
       return md + '\n';
     }
   );
+
+  // Then remove any remaining export statements (objects, functions, etc.)
+  // Matches multiline exports: export const name = { ... } (with or without semicolon)
+  content = content.replace(/export\s+const\s+\w+\s*=\s*\{[\s\S]*?\}\s*;?/g, '');
+  // Matches simple exports: export const name = value;
+  content = content.replace(/^export\s+const\s+\w+\s*=\s*[^{\[]*?;\s*$/gm, '');
+
+  return content;
 }
 
 // Convert DynamicCode components to fenced code blocks
