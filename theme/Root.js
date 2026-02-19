@@ -23,6 +23,7 @@ export default function Root({ children }) {
   const pluginData = usePluginData('markdown-source-plugin') ?? {};
   const docsPath = pluginData.docsPath || '/docs/';
   const widgetType = pluginData.widgetType || 'button';
+  const containerSelector = pluginData.containerSelector || 'article .markdown header';
 
   // Scroll to hash on page load (handles deep links)
   useEffect(() => {
@@ -47,22 +48,22 @@ export default function Root({ children }) {
     }
   }, [hash]);
 
-  // Inject widget into article header
+  // Inject widget into target container
   useEffect(() => {
     const injectWidget = () => {
       // Only inject on docs pages
       if (!pathname.startsWith(docsPath)) return;
 
-      const articleHeader = document.querySelector('article .markdown header');
-      if (!articleHeader) return;
+      const targetContainer = document.querySelector(containerSelector);
+      if (!targetContainer) return;
 
       // Check if already injected
-      if (articleHeader.querySelector('.markdown-actions-container')) return;
+      if (targetContainer.querySelector('.markdown-actions-container')) return;
 
       // Create container for the widget
       const container = document.createElement('div');
       container.className = 'markdown-actions-container';
-      articleHeader.appendChild(container);
+      targetContainer.appendChild(container);
 
       // Select component based on widgetType config
       const WidgetComponent = widgetType === 'dropdown' 
@@ -80,7 +81,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath, widgetType]);
+  }, [pathname, docsPath, widgetType, containerSelector]);
 
   return <>{children}</>;
 }

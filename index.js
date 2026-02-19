@@ -36,28 +36,8 @@ function convertTabsToMarkdown(content) {
       // Use label if available, otherwise fall back to value
       const displayLabel = label || value || 'Tab';
 
-      // Normalize indentation: find minimum indent and remove it from all lines
-      // This ensures all TabItem content is left-aligned consistently
-      // Exclude lines that are already at column 0 (from previously converted nested content)
-      const lines = itemContent.split('\n');
-      const indentedNonEmptyLines = lines.filter(line => line.trim().length > 0 && /^\s/.test(line));
-      let cleanContent = itemContent;
-      if (indentedNonEmptyLines.length > 0) {
-        const minIndent = Math.min(...indentedNonEmptyLines.map(line => {
-          const match = line.match(/^(\s*)/);
-          return match ? match[1].length : 0;
-        }));
-        if (minIndent > 0) {
-          cleanContent = lines.map(line => {
-            // Only remove indent from lines that have it
-            if (line.length >= minIndent && /^\s/.test(line)) {
-              return line.slice(minIndent);
-            }
-            return line;
-          }).join('\n');
-        }
-      }
-      cleanContent = cleanContent.trim();
+      // Preserve the content as-is (don't strip indentation - it may be meaningful for lists)
+      const cleanContent = itemContent.trim();
 
       result.push(`**${displayLabel}:**\n\n${cleanContent}`);
     }
@@ -158,19 +138,15 @@ function convertDynamicCodeToMarkdown(content) {
       cleanCode = cleanCode.replace(/^`/, '').replace(/`$/, '');
       
       // Normalize indentation: find minimum indent and remove it from all lines
-      // Skip the first non-empty line when calculating min indent (it may have 0 indent
-      // because it's right after the opening backtick in template literals)
       const lines = cleanCode.split('\n');
       const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-      if (nonEmptyLines.length > 1) {
-        // Calculate min indent from all lines EXCEPT the first non-empty line
-        const restLines = nonEmptyLines.slice(1);
-        const minIndent = Math.min(...restLines.map(line => {
+      if (nonEmptyLines.length > 0) {
+        const minIndent = Math.min(...nonEmptyLines.map(line => {
           const match = line.match(/^(\s*)/);
           return match ? match[1].length : 0;
         }));
         if (minIndent > 0) {
-          cleanCode = lines.map(line => line.slice(Math.min(minIndent, line.search(/\S|$/) ))).join('\n');
+          cleanCode = lines.map(line => line.slice(minIndent)).join('\n');
         }
       }
       
@@ -189,28 +165,15 @@ function convertConditionalContentToMarkdown(content) {
     // Extract the condition value from the tag (e.g., 'Llama' from model.includes('Llama'))
     const conditionMatch = match.match(/\.includes\s*\(\s*['"]([^'"]+)['"]\s*\)/);
     
-    // Normalize indentation: find minimum indent and remove it from all lines
-    const lines = innerContent.split('\n');
-    const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-    let cleanContent = innerContent;
-    if (nonEmptyLines.length > 0) {
-      const minIndent = Math.min(...nonEmptyLines.map(line => {
-        const m = line.match(/^(\s*)/);
-        return m ? m[1].length : 0;
-      }));
-      if (minIndent > 0) {
-        cleanContent = lines.map(line => line.slice(minIndent)).join('\n');
-      }
-    }
-    cleanContent = cleanContent.trim();
-    
     if (conditionMatch) {
       const conditionValue = conditionMatch[1];
+      // Clean up the inner content
+      const cleanContent = innerContent.trim();
       return `**${conditionValue} model:**\n\n${cleanContent}\n`;
     }
     
     // If no condition found, just return the inner content
-    return cleanContent;
+    return innerContent.trim();
   });
 }
 
@@ -314,45 +277,28 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 2. Remove import statements (MDX imports)
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
-  // 3. Protect code blocks and inline code from MDX processing
-  // This must happen early, before any component processing
-  // First protect fenced code blocks (triple backticks)
-  const codeBlockPlaceholders = [];
-  content = content.replace(/```[\s\S]*?```/g, (match) => {
-    const placeholder = `__CODE_BLOCK_${codeBlockPlaceholders.length}__`;
-    codeBlockPlaceholders.push(match);
-    return placeholder;
-  });
-  // Then protect inline code (single backticks)
-  const inlineCodePlaceholders = [];
-  content = content.replace(/`([^`]+)`/g, (match, code) => {
-    const placeholder = `__INLINE_CODE_${inlineCodePlaceholders.length}__`;
-    inlineCodePlaceholders.push(match);
-    return placeholder;
-  });
-
-  // 4. Remove MDX/JSX comments {/* ... */}
+  // 3. Remove MDX/JSX comments {/* ... */}
   content = removeMdxComments(content);
 
-  // 5. Convert DynamicCode components to fenced code blocks
+  // 4. Convert DynamicCode components to fenced code blocks
   content = convertDynamicCodeToMarkdown(content);
 
-  // 6. Convert JavaScript export arrays to readable bullet lists
+  // 4. Convert JavaScript export arrays to readable bullet lists
   content = convertExportsToMarkdown(content);
 
-  // 7. Convert ConditionalContent to labeled sections
+  // 5. Convert ConditionalContent to labeled sections
   content = convertConditionalContentToMarkdown(content);
 
-  // 8. Convert Requirements component to link
+  // 6. Convert Requirements component to link
   content = convertRequirementsToMarkdown(content);
 
-  // 9. Unwrap MDX components (remove tags, preserve inner content)
+  // 7. Unwrap MDX components (remove tags, preserve inner content)
   content = unwrapMdxComponents(content);
 
-  // 10. Remove div tags (preserve inner content)
+  // 7. Remove div tags (preserve inner content)
   content = removeDivTags(content);
 
-  // 11. Convert HTML images to markdown
+  // 7. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
     /<p align="center">\s*\n?\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\} alt="([^"]*)"(?:\s+width="[^"]*")?\s*\/>\s*\n?\s*<\/p>/g,
@@ -363,33 +309,33 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
     }
   );
 
-  // 12. Convert YouTube iframes to text links
+  // 4. Convert YouTube iframes to text links
   content = content.replace(
     /<iframe[^>]*src="https:\/\/www\.youtube\.com\/embed\/([a-zA-Z0-9_-]+)[^"]*"[^>]*title="([^"]*)"[^>]*>[\s\S]*?<\/iframe>/g,
     'Watch the video: [$2](https://www.youtube.com/watch?v=$1)'
   );
 
-  // 13. Clean HTML5 video tags - keep HTML but add fallback text
+  // 5. Clean HTML5 video tags - keep HTML but add fallback text
   content = content.replace(
     /<video[^>]*>\s*<source src=["']([^"']+)["'][^>]*>\s*<\/video>/g,
     '<video controls>\n  <source src="$1" type="video/mp4" />\n  <p>Video demonstration: $1</p>\n</video>'
   );
 
-  // 14. Remove <Head> components with structured data (SEO metadata not needed in raw markdown)
+  // 6. Remove <Head> components with structured data (SEO metadata not needed in raw markdown)
   content = content.replace(/<Head>[\s\S]*?<\/Head>/g, '');
 
-  // 15. Convert Tabs/TabItem components to readable markdown (preserve content)
+  // 7. Convert Tabs/TabItem components to readable markdown (preserve content)
   content = convertTabsToMarkdown(content);
 
-  // 16. Convert details/summary components to readable markdown (preserve content)
+  // 8. Convert details/summary components to readable markdown (preserve content)
   content = convertDetailsToMarkdown(content);
 
-  // 17. Remove custom React/MDX components (FAQStructuredData, etc.)
+  // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
   // This runs AFTER Tabs/details conversion to preserve their content
   content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
 
-  // 18. Convert relative image paths to absolute paths from docs root
+  // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
   content = content.replace(
     /!\[([^\]]*)\]\((\.\/)?img\/([^)]+)\)/g,
@@ -401,23 +347,15 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
     }
   );
 
-  // 19. Remove any leading blank lines
+  // 11. Remove any leading blank lines
   content = content.replace(/^\s*\n/, '');
 
-  // 20. Prepend title from frontmatter as H1 heading
+  // 12. Prepend title from frontmatter as H1 heading
   if (title) {
     content = `# ${title}\n\n${content}`;
   }
 
-  // 21. Restore inline code and code blocks
-  inlineCodePlaceholders.forEach((code, i) => {
-    content = content.replace(`__INLINE_CODE_${i}__`, code);
-  });
-  codeBlockPlaceholders.forEach((code, i) => {
-    content = content.replace(`__CODE_BLOCK_${i}__`, code);
-  });
-
-  // 22. Collapse multiple consecutive blank lines into single blank line
+  // 13. Collapse multiple consecutive blank lines into single blank line
   content = collapseBlankLines(content);
 
   return content;
@@ -495,6 +433,8 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const docsDirName = options.docsDir || 'docs';
   // Widget type: 'button' (simple copy button) or 'dropdown' (with multiple actions)
   const widgetType = options.widgetType || 'button';
+  // CSS selector for where to inject the widget
+  const containerSelector = options.containerSelector || 'article .markdown header';
 
   return {
     name: 'markdown-source-plugin',
@@ -507,7 +447,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath, widgetType });
+      setGlobalData({ docsPath, widgetType, containerSelector });
     },
 
     async postBuild({ outDir }) {
