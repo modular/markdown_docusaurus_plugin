@@ -435,6 +435,9 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const widgetType = options.widgetType || 'button';
   // CSS selector for where to inject the widget
   const containerSelector = options.containerSelector || 'article .markdown header';
+  // Configurable button text
+  const copyButtonText = options.copyButtonText || 'Copy page';
+  const copiedButtonText = options.copiedButtonText || 'Copied';
 
   return {
     name: 'markdown-source-plugin',
@@ -447,7 +450,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath, widgetType, containerSelector });
+      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText });
     },
 
     async postBuild({ outDir }) {

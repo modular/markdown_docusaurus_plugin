@@ -24,6 +24,8 @@ export default function Root({ children }) {
   const docsPath = pluginData.docsPath || '/docs/';
   const widgetType = pluginData.widgetType || 'button';
   const containerSelector = pluginData.containerSelector || 'article .markdown header';
+  const copyButtonText = pluginData.copyButtonText || 'Copy page';
+  const copiedButtonText = pluginData.copiedButtonText || 'Copied';
 
   // Scroll to hash on page load (handles deep links)
   useEffect(() => {
@@ -73,7 +75,13 @@ export default function Root({ children }) {
       // Render React component into container
       // Pass config as props since component is outside Docusaurus React tree
       const root = createRoot(container);
-      root.render(<WidgetComponent docsPath={docsPath} />);
+      root.render(
+        <WidgetComponent 
+          docsPath={docsPath} 
+          copyButtonText={copyButtonText}
+          copiedButtonText={copiedButtonText}
+        />
+      );
     };
 
     // Try to inject after short delays to ensure DOM is ready
@@ -81,7 +89,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath, widgetType, containerSelector]);
+  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText]);
 
   return <>{children}</>;
 }

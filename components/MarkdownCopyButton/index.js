@@ -1,15 +1,22 @@
 import React from 'react';
 import useMarkdownCopy from '../hooks/useMarkdownCopy';
-import { CopyIcon, CheckIcon } from '../icons';
+import CopyIcon from '@theme/MarkdownCopyIcon';
+import CheckIcon from '@theme/MarkdownCheckIcon';
 
 /**
  * Simple button component for copying markdown content
- * Shows a copy icon and "Copy page" text, changes to checkmark and "Copied" on success
+ * Shows a copy icon and configurable text, changes to checkmark on success
  * 
  * @param {Object} props
  * @param {string} props.docsPath - Base path for docs pages (default: '/docs/')
+ * @param {string} props.copyButtonText - Text shown on button (default: 'Copy page')
+ * @param {string} props.copiedButtonText - Text shown after copy (default: 'Copied')
  */
-export default function MarkdownCopyButton({ docsPath = '/docs/' }) {
+export default function MarkdownCopyButton({ 
+  docsPath = '/docs/',
+  copyButtonText = 'Copy page',
+  copiedButtonText = 'Copied'
+}) {
   const { copied, loading, isDocsPage, copyMarkdown } = useMarkdownCopy(docsPath);
 
   // Don't render on non-docs pages
@@ -29,7 +36,7 @@ export default function MarkdownCopyButton({ docsPath = '/docs/' }) {
       ) : (
         <CopyIcon size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
       )}
-      {copied ? 'Copied' : 'Copy page'}
+      {copied ? copiedButtonText : copyButtonText}
     </button>
   );
 }
