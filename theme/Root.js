@@ -26,6 +26,7 @@ export default function Root({ children }) {
   const containerSelector = pluginData.containerSelector || 'article .markdown header';
   const copyButtonText = pluginData.copyButtonText || 'Copy page';
   const copiedButtonText = pluginData.copiedButtonText || 'Copied';
+  const supportDirectoryIndex = pluginData.supportDirectoryIndex || false;
 
   // Scroll to hash on page load (handles deep links)
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function Root({ children }) {
           docsPath={docsPath} 
           copyButtonText={copyButtonText}
           copiedButtonText={copiedButtonText}
+          supportDirectoryIndex={supportDirectoryIndex}
         />
       );
     };
@@ -89,7 +91,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText]);
+  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex]);
 
   return <>{children}</>;
 }
