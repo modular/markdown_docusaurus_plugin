@@ -6,13 +6,13 @@ import CheckIcon from '@theme/MarkdownCheckIcon';
 /**
  * Simple button component for copying markdown content
  * Shows a copy icon and configurable text, changes to checkmark on success
- * 
+ *
  * @param {Object} props
  * @param {string} props.docsPath - Base path for docs pages (default: '/docs/')
  * @param {string} props.copyButtonText - Text shown on button (default: 'Copy page')
  * @param {string} props.copiedButtonText - Text shown after copy (default: 'Copied')
  */
-export default function MarkdownCopyButton({ 
+export default function MarkdownCopyButton({
   docsPath = '/docs/',
   copyButtonText = 'Copy page',
   copiedButtonText = 'Copied'
@@ -32,9 +32,9 @@ export default function MarkdownCopyButton({
       aria-label={copied ? 'Copied to clipboard' : 'Copy page as markdown'}
     >
       {copied ? (
-        <CheckIcon size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+        <CheckIcon size={16} style={{ verticalAlign: 'middle' }} />
       ) : (
-        <CopyIcon size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+        <CopyIcon size={16} style={{ verticalAlign: 'middle' }} />
       )}
       {copied ? copiedButtonText : copyButtonText}
     </button>
