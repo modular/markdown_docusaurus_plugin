@@ -15,9 +15,10 @@ import CheckIcon from '@theme/MarkdownCheckIcon';
 export default function MarkdownCopyButton({
   docsPath = '/docs/',
   copyButtonText = 'Copy page',
-  copiedButtonText = 'Copied'
+  copiedButtonText = 'Copied',
+  supportDirectoryIndex = false,
 }) {
-  const { copied, loading, isDocsPage, copyMarkdown } = useMarkdownCopy(docsPath);
+  const { copied, loading, isDocsPage, copyMarkdown } = useMarkdownCopy(docsPath, supportDirectoryIndex);
 
   // Don't render on non-docs pages
   if (!isDocsPage) {

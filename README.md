@@ -81,6 +81,11 @@ module.exports = {
 
       // Label shown after a successful copy (default: 'Copied')
       copiedButtonText: 'Copied',
+
+      // When true, trailing-slash URLs fetch intro.md
+      // (e.g., /foo/ -> /foo/intro.md). When false, the trailing slash
+      // is stripped (e.g., /foo/ -> /foo.md). (default: false)
+      supportDirectoryIndex: false,
     }],
   ],
 };

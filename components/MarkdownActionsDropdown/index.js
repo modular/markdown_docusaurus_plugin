@@ -9,7 +9,7 @@ import { CopyIcon, CheckIcon, ChevronDownIcon, ExternalLinkIcon } from '../icons
  * @param {Object} props
  * @param {string} props.docsPath - Base path for docs pages (default: '/docs/')
  */
-export default function MarkdownActionsDropdown({ docsPath = '/docs/' }) {
+export default function MarkdownActionsDropdown({ docsPath = '/docs/', supportDirectoryIndex = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   
@@ -18,7 +18,7 @@ export default function MarkdownActionsDropdown({ docsPath = '/docs/' }) {
     isDocsPage, 
     copyMarkdown, 
     openMarkdown 
-  } = useMarkdownCopy(docsPath);
+  } = useMarkdownCopy(docsPath, supportDirectoryIndex);
 
   // Handle click outside to close dropdown
   useEffect(() => {

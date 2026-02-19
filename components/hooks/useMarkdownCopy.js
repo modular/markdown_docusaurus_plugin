@@ -5,9 +5,12 @@ import { useState, useCallback } from 'react';
  * Provides shared logic for fetching and copying markdown content
  * 
  * @param {string} docsPath - The base path for docs (e.g., '/docs/' or '/')
+ * @param {boolean} supportDirectoryIndex - When true, trailing-slash URLs
+ *   fetch intro.md (e.g., /foo/ -> /foo/intro.md). When false, the trailing
+ *   slash is stripped (e.g., /foo/ -> /foo.md).
  * @returns {Object} Hook state and actions
  */
-export default function useMarkdownCopy(docsPath = '/docs/') {
+export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryIndex = false) {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -20,11 +23,15 @@ export default function useMarkdownCopy(docsPath = '/docs/') {
   // Check if current page is a docs page
   const isDocsPage = currentPath.startsWith(docsPath);
 
-  // Construct the .md URL
-  // Handles directory indexes (e.g., /docs/ -> /docs/intro.md)
-  const markdownUrl = currentPath.endsWith('/')
-    ? `${currentPath}intro.md`
-    : `${currentPath}.md`;
+  // Construct the .md URL from the current path
+  let markdownUrl;
+  if (!currentPath.endsWith('/')) {
+    markdownUrl = `${currentPath}.md`;
+  } else if (supportDirectoryIndex) {
+    markdownUrl = `${currentPath}intro.md`;
+  } else {
+    markdownUrl = `${currentPath.slice(0, -1)}.md`;
+  }
 
   /**
    * Copy markdown content to clipboard

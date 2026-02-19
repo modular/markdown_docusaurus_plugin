@@ -28,11 +28,11 @@ function convertTabsToMarkdown(content) {
 
     while ((match = tabItemPattern.exec(tabsContent)) !== null) {
       const [, attributes, itemContent] = match;
-      
+
       // Extract label and value from attributes (works regardless of order)
       const label = extractAttribute(attributes, 'label');
       const value = extractAttribute(attributes, 'value');
-      
+
       // Use label if available, otherwise fall back to value
       const displayLabel = label || value || 'Tab';
 
@@ -48,7 +48,7 @@ function convertTabsToMarkdown(content) {
   // Process repeatedly to handle nested tabs (innermost first)
   let previousContent;
   let currentContent = content;
-  
+
   do {
     previousContent = currentContent;
     currentContent = currentContent.replace(tabsPattern, processTabsBlock);
@@ -57,7 +57,7 @@ function convertTabsToMarkdown(content) {
   // Clean up any leftover TabItem or Tabs closing tags that weren't matched
   currentContent = currentContent.replace(/<\/TabItem>/g, '');
   currentContent = currentContent.replace(/<\/\w*Tabs>/g, '');
-  
+
   // Also clean up orphaned opening tags (in case content wasn't properly structured)
   currentContent = currentContent.replace(/<TabItem\s+[^>]*>/g, '');
   currentContent = currentContent.replace(/<\w*Tabs[^>]*>/g, '');
@@ -130,13 +130,13 @@ function convertDynamicCodeToMarkdown(content) {
       // 2. Remove backticks (template literal)
       // 3. Normalize indentation
       let cleanCode = code.trim();
-      
+
       // Remove leading { and trailing }
       cleanCode = cleanCode.replace(/^\s*\{\s*/, '').replace(/\s*\}\s*$/, '');
-      
+
       // Remove backticks (template literal delimiters)
       cleanCode = cleanCode.replace(/^`/, '').replace(/`$/, '');
-      
+
       // Normalize indentation: find minimum indent and remove it from all lines
       const lines = cleanCode.split('\n');
       const nonEmptyLines = lines.filter(line => line.trim().length > 0);
@@ -149,7 +149,7 @@ function convertDynamicCodeToMarkdown(content) {
           cleanCode = lines.map(line => line.slice(minIndent)).join('\n');
         }
       }
-      
+
       cleanCode = cleanCode.trim();
       return '```' + language + '\n' + cleanCode + '\n```';
     }
@@ -164,14 +164,14 @@ function convertConditionalContentToMarkdown(content) {
   return content.replace(pattern, (match, innerContent) => {
     // Extract the condition value from the tag (e.g., 'Llama' from model.includes('Llama'))
     const conditionMatch = match.match(/\.includes\s*\(\s*['"]([^'"]+)['"]\s*\)/);
-    
+
     if (conditionMatch) {
       const conditionValue = conditionMatch[1];
       // Clean up the inner content
       const cleanContent = innerContent.trim();
       return `**${conditionValue} model:**\n\n${cleanContent}\n`;
     }
-    
+
     // If no condition found, just return the inner content
     return innerContent.trim();
   });
@@ -438,6 +438,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   // Configurable button text
   const copyButtonText = options.copyButtonText || 'Copy page';
   const copiedButtonText = options.copiedButtonText || 'Copied';
+  const supportDirectoryIndex = options.supportDirectoryIndex || false;
 
   return {
     name: 'markdown-source-plugin',
@@ -450,7 +451,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText });
+      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex });
     },
 
     async postBuild({ outDir }) {
