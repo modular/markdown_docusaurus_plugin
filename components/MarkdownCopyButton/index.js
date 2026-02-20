@@ -18,7 +18,7 @@ export default function MarkdownCopyButton({
   copiedButtonText = 'Copied',
   supportDirectoryIndex = false,
 }) {
-  const { copied, loading, isDocsPage, copyMarkdown } = useMarkdownCopy(docsPath, supportDirectoryIndex);
+  const { copied, loading, error, isDocsPage, copyMarkdown } = useMarkdownCopy(docsPath, supportDirectoryIndex);
 
   // Don't render on non-docs pages
   if (!isDocsPage) {
@@ -29,15 +29,15 @@ export default function MarkdownCopyButton({
     <button
       className="button button--secondary button--sm markdown-copy-button"
       onClick={copyMarkdown}
-      disabled={copied || loading}
-      aria-label={copied ? 'Copied to clipboard' : 'Copy page as markdown'}
+      disabled={copied || loading || !!error}
+      aria-label={error ? 'Copy failed' : copied ? 'Copied to clipboard' : 'Copy page as markdown'}
     >
       {copied ? (
         <CheckIcon size={16} style={{ verticalAlign: 'middle' }} />
       ) : (
         <CopyIcon size={16} style={{ verticalAlign: 'middle' }} />
       )}
-      {copied ? copiedButtonText : copyButtonText}
+      {error ? 'Copy failed!' : copied ? copiedButtonText : copyButtonText}
     </button>
   );
 }

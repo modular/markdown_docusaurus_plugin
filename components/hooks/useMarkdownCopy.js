@@ -38,7 +38,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
    * Fetches the markdown file and copies its content
    */
   const copyMarkdown = useCallback(async () => {
-    if (loading || copied) return;
+    if (loading || copied || error) return;
 
     setLoading(true);
     setError(null);
@@ -57,6 +57,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
     } catch (err) {
       setError(err);
       console.error('Failed to copy markdown:', err);
+      setTimeout(() => setError(null), 2000);
     } finally {
       setLoading(false);
     }

@@ -5,19 +5,20 @@ import { CopyIcon, CheckIcon, ChevronDownIcon, ExternalLinkIcon } from '../icons
 /**
  * Dropdown component with multiple markdown actions
  * Provides options to view markdown in new tab or copy to clipboard
- * 
+ *
  * @param {Object} props
  * @param {string} props.docsPath - Base path for docs pages (default: '/docs/')
  */
 export default function MarkdownActionsDropdown({ docsPath = '/docs/', supportDirectoryIndex = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
-  
-  const { 
-    copied, 
-    isDocsPage, 
-    copyMarkdown, 
-    openMarkdown 
+
+  const {
+    copied,
+    error,
+    isDocsPage,
+    copyMarkdown,
+    openMarkdown
   } = useMarkdownCopy(docsPath, supportDirectoryIndex);
 
   // Handle click outside to close dropdown
@@ -61,9 +62,9 @@ export default function MarkdownActionsDropdown({ docsPath = '/docs/', supportDi
         aria-haspopup="true"
         aria-expanded={isOpen}
       >
-        <CopyIcon size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} />
+        <CopyIcon size={16} style={{ verticalAlign: 'middle' }} />
         Copy page
-        <ChevronDownIcon size={12} style={{ marginLeft: '6px', verticalAlign: 'middle' }} />
+        <ChevronDownIcon size={12} style={{ verticalAlign: 'middle' }} />
       </button>
 
       <ul className="dropdown__menu">
@@ -71,17 +72,17 @@ export default function MarkdownActionsDropdown({ docsPath = '/docs/', supportDi
           <button
             className="dropdown__link"
             onClick={handleOpenMarkdown}
-            style={{ 
-              cursor: 'pointer', 
-              border: 'none', 
-              background: 'none', 
-              width: '100%', 
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              background: 'none',
+              width: '100%',
               textAlign: 'left',
               display: 'flex',
               alignItems: 'center'
             }}
           >
-            <ExternalLinkIcon size={16} style={{ marginRight: '8px' }} />
+            <ExternalLinkIcon size={16} />
             View as Markdown
           </button>
         </li>
@@ -89,25 +90,30 @@ export default function MarkdownActionsDropdown({ docsPath = '/docs/', supportDi
           <button
             className="dropdown__link"
             onClick={handleCopyMarkdown}
-            disabled={copied}
-            style={{ 
-              cursor: 'pointer', 
-              border: 'none', 
-              background: 'none', 
-              width: '100%', 
+            disabled={copied || !!error}
+            style={{
+              cursor: 'pointer',
+              border: 'none',
+              background: 'none',
+              width: '100%',
               textAlign: 'left',
               display: 'flex',
               alignItems: 'center'
             }}
           >
-            {copied ? (
+            {error ? (
               <>
-                <CheckIcon size={16} style={{ marginRight: '8px' }} />
+                <CopyIcon size={16} />
+                Copy failed!
+              </>
+            ) : copied ? (
+              <>
+                <CheckIcon size={16} />
                 Copied!
               </>
             ) : (
               <>
-                <CopyIcon size={16} style={{ marginRight: '8px' }} />
+                <CopyIcon size={16} />
                 Copy Page as Markdown
               </>
             )}
