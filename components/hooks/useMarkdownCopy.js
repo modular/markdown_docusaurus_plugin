@@ -44,7 +44,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
     setError(null);
 
     try {
-      const response = await fetch(markdownUrl);
+      const response = await fetch(markdownUrl, { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`Failed to fetch markdown: ${response.status}`);
       }
