@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 /**
  * Custom hook for markdown copy functionality
  * Provides shared logic for fetching and copying markdown content
- * 
+ *
  * @param {string} docsPath - The base path for docs (e.g., '/docs/' or '/')
  * @param {boolean} supportDirectoryIndex - When true, trailing-slash URLs
  *   fetch intro.md (e.g., /foo/ -> /foo/intro.md). When false, the trailing
@@ -16,8 +16,8 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
   const [error, setError] = useState(null);
 
   // Get current pathname from window.location
-  const currentPath = typeof window !== 'undefined' 
-    ? window.location.pathname 
+  const currentPath = typeof window !== 'undefined'
+    ? window.location.pathname
     : '';
 
   // Check if current page is a docs page
@@ -44,20 +44,23 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
     setError(null);
 
     try {
-      const response = await fetch(markdownUrl, { credentials: 'include' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch markdown: ${response.status}`);
-      }
-      const markdown = await response.text();
-      await navigator.clipboard.writeText(markdown);
+      // Use ClipboardItem with a content promise so the clipboard.write()
+      // call happens synchronously within the user gesture. Safari denies
+      // clipboard access if an async gap (like await fetch) comes first.
+      const clipboardItem = new ClipboardItem({
+        'text/plain': fetch(markdownUrl, { credentials: 'include' })
+          .then(response => {
+            if (!response.ok) throw new Error(`Failed to fetch markdown: ${response.status}`);
+            return response.blob();
+          })
+      });
+      await navigator.clipboard.write([clipboardItem]);
 
       setCopied(true);
-      // Reset copied state after 2 seconds
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       setError(err);
       console.error('Failed to copy markdown:', err);
-      setTimeout(() => setError(null), 2000);
     } finally {
       setLoading(false);
     }
