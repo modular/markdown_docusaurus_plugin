@@ -71,7 +71,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
     } catch (err) {
       setError(err);
       console.error('Failed to copy markdown:', err);
-      setTimeout(() => setError(null), 3000);
+      setTimeout(() => setError(null), 4000);
     } finally {
       setLoading(false);
     }
