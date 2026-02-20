@@ -57,7 +57,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
               fetchError = new Error(`Failed to fetch markdown: ${response.status}`);
               throw fetchError;
             }
-            return response.blob();
+            return response.text().then(t => new Blob([t], { type: 'text/plain' }));
           })
       });
       try {
