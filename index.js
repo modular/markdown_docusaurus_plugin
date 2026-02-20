@@ -88,12 +88,51 @@ function parseArrayObjects(arrayContent) {
   return objects;
 }
 
+// Find the end of an export statement starting at the given position,
+// properly tracking nested {}/[] so we don't stop at inner braces.
+function findExportEnd(content, startIdx) {
+  let i = startIdx;
+  let depth = 0;
+  let inString = false;
+  let stringChar = '';
+
+  while (i < content.length) {
+    const ch = content[i];
+
+    if (inString) {
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === stringChar) inString = false;
+      i++;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'" || ch === '`') {
+      inString = true;
+      stringChar = ch;
+    } else if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+      if (depth <= 0) {
+        i++;
+        if (i < content.length && content[i] === ';') i++;
+        return i;
+      }
+    } else if (depth === 0 && ch === ';') {
+      return i + 1;
+    }
+
+    i++;
+  }
+  return i;
+}
+
 // Convert JavaScript export const arrays to readable markdown bullet lists
 // Arrays of objects are converted to lists; other exports are removed
 function convertExportsToMarkdown(content) {
-  // First, convert array exports to bullet lists: export const name = [ ... ];
+  // First, convert array exports that contain objects to bullet lists
   content = content.replace(
-    /export\s+const\s+(\w+)\s*=\s*\[([\s\S]*?)\];/g,
+    /export\s+const\s+(\w+)\s*=\s*\[([\s\S]*?)\]\s*;?/g,
     (match, varName, arrayContent) => {
       const items = parseArrayObjects(arrayContent);
       if (items.length === 0) return '';
@@ -109,11 +148,18 @@ function convertExportsToMarkdown(content) {
     }
   );
 
-  // Then remove any remaining export statements (objects, functions, etc.)
-  // Matches multiline exports: export const name = { ... } (with or without semicolon)
-  content = content.replace(/export\s+const\s+\w+\s*=\s*\{[\s\S]*?\}\s*;?/g, '');
-  // Matches simple exports: export const name = value;
-  content = content.replace(/^export\s+const\s+\w+\s*=\s*[^{\[]*?;\s*$/gm, '');
+  // Remove all remaining export const statements, tracking nested {}/[] depth
+  const exportPattern = /^export\s+const\s+\w+\s*=\s*/gm;
+  let match;
+  const regions = [];
+  while ((match = exportPattern.exec(content)) !== null) {
+    const valueStart = match.index + match[0].length;
+    const end = findExportEnd(content, valueStart);
+    regions.push([match.index, end]);
+  }
+  for (let i = regions.length - 1; i >= 0; i--) {
+    content = content.slice(0, regions[i][0]) + content.slice(regions[i][1]);
+  }
 
   return content;
 }
@@ -291,6 +337,12 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
 
   // 6. Convert Requirements component to link
   content = convertRequirementsToMarkdown(content);
+
+  // Convert Button components with DocLink to markdown links
+  content = content.replace(
+    /<Button\s+component=\{DocLink\}\s+to=['"]([^'"]+)['"]>\s*([\s\S]*?)\s*<\/Button>/g,
+    '[$2]($1)'
+  );
 
   // 7. Unwrap MDX components (remove tags, preserve inner content)
   content = unwrapMdxComponents(content);
