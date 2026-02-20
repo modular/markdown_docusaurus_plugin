@@ -469,7 +469,15 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       for (const mdFile of mdFiles) {
         const sourcePath = path.join(docsDir, mdFile);
         // Convert .mdx to .md for the destination (URLs use .md extension)
-        const destFile = mdFile.replace(/\.mdx$/, '.md');
+        let destFile = mdFile.replace(/\.mdx$/, '.md');
+
+        // When supportDirectoryIndex is off, rewrite index.md to parent path
+        // so trailing-slash URLs resolve correctly (e.g., /foo/ -> /foo.md)
+        if (!supportDirectoryIndex && path.basename(destFile) === 'index.md') {
+          const parentDir = path.dirname(destFile);
+          destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
+        }
+
         const destPath = path.join(buildDir, destFile);
 
         try {
