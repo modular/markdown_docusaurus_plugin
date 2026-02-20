@@ -44,27 +44,38 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
     setError(null);
 
     try {
+      // Track fetch errors separately so we can surface them even when
+      // Safari wraps the rejection in a generic NotAllowedError.
+      let fetchError = null;
       // Use ClipboardItem with a content promise so the clipboard.write()
       // call happens synchronously within the user gesture. Safari denies
       // clipboard access if an async gap (like await fetch) comes first.
       const clipboardItem = new ClipboardItem({
         'text/plain': fetch(markdownUrl, { credentials: 'include' })
           .then(response => {
-            if (!response.ok) throw new Error(`Failed to fetch markdown: ${response.status}`);
+            if (!response.ok) {
+              fetchError = new Error(`Failed to fetch markdown: ${response.status}`);
+              throw fetchError;
+            }
             return response.blob();
           })
       });
-      await navigator.clipboard.write([clipboardItem]);
+      try {
+        await navigator.clipboard.write([clipboardItem]);
+      } catch (err) {
+        throw fetchError || err;
+      }
 
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       setError(err);
       console.error('Failed to copy markdown:', err);
+      setTimeout(() => setError(null), 4000);
     } finally {
       setLoading(false);
     }
-  }, [markdownUrl, loading, copied]);
+  }, [markdownUrl, loading, copied, error]);
 
   /**
    * Open markdown file in a new tab
