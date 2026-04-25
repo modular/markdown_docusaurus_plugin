@@ -96,6 +96,12 @@ module.exports = {
       // By default the plugin uses context.siteConfig.url + baseUrl
       // from your Docusaurus config. (default: undefined — auto-detected)
       // siteUrl: 'https://example.com/docs',
+
+      // Markdown blockquote prepended to every generated .md file.
+      // Satisfies the llms-txt-directive check (afdocs). When set, the
+      // plugin also provides a <LlmsDirective /> theme component for
+      // placement on any page. (default: null — disabled)
+      // directive: '> For the full docs index, see [llms.txt](/llms.txt).\n> Markdown versions of all pages are available by appending .md to any URL.',
     }],
   ],
 };
@@ -131,6 +137,65 @@ left unchanged.
 The base URL defaults to `url` + `baseUrl` from your Docusaurus config. You can
 override it with the `siteUrl` option if your production URL differs from the
 config.
+
+### LLM directive (llms-txt-directive)
+
+When `directive` is set to a markdown blockquote string, the plugin:
+
+1. **Prepends it to every generated `.md` file** — before fully-qualified link
+   processing, so links in the directive (like `/llms.txt`) are also rewritten
+   when `fullyQualifiedLinks` is enabled.
+2. **Provides a `LlmsDirective` theme component** — a server-rendered
+   `<blockquote>` you can place on any page, satisfying the
+   [llms-txt-directive](https://afdocs.dev/checks/content-discoverability.html#llms-txt-directive)
+   check. For doc pages, swizzle `DocItem/Content` (wrapping mode) and render
+   `<LlmsDirective />` before the original content.
+
+Example configuration:
+
+```javascript
+directive: '> For the full docs index, see [llms.txt](/llms.txt).\n'
+         + '> Markdown versions of all pages are available by appending .md to any URL.',
+```
+
+The rendered HTML blockquote has the class `llms-directive` so you can style or
+visually hide it with CSS (the spec permits hiding it while keeping it in the
+server-rendered HTML for agents).
+
+**Doc pages — swizzle `DocItem/Content`:**
+
+```jsx
+// src/theme/DocItem/Content/index.js
+import React from 'react';
+import Content from '@theme-original/DocItem/Content';
+import LlmsDirective from '@theme/LlmsDirective';
+
+export default function ContentWrapper(props) {
+  return (
+    <>
+      <LlmsDirective />
+      <Content {...props} />
+    </>
+  );
+}
+```
+
+**Non-doc pages — import the component directly:**
+
+```jsx
+import LlmsDirective from '@theme/LlmsDirective';
+
+export default function HomePage() {
+  return (
+    <Layout>
+      <LlmsDirective />
+      {/* ... */}
+    </Layout>
+  );
+}
+```
+
+When `directive` is not configured, the component renders nothing.
 
 ### Custom icons
 

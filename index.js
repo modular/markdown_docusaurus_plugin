@@ -578,6 +578,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const copiedButtonText = options.copiedButtonText || 'Copied';
   const supportDirectoryIndex = options.supportDirectoryIndex || false;
   const fullyQualifiedLinks = options.fullyQualifiedLinks || false;
+  const directive = options.directive || null;
 
   return {
     name: 'markdown-source-plugin',
@@ -590,7 +591,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex });
+      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, directive });
     },
 
     async postBuild({ outDir }) {
@@ -636,6 +637,11 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
 
           // Clean markdown for raw display
           let cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
+
+          // Prepend the llms-txt-directive blockquote
+          if (directive) {
+            cleanedContent = directive + '\n\n' + cleanedContent;
+          }
 
           // Rewrite internal links to fully-qualified .md URLs
           if (fullyQualifiedLinks) {
