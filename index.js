@@ -444,7 +444,10 @@ function resolveLink(href, pageUrlDir, siteUrl) {
     pathPart = pathPart.slice(0, -1);
   }
 
-  if (!pathPart.endsWith('.md')) {
+  const ext = path.posix.extname(pathPart);
+  if (ext === '.mdx') {
+    pathPart = pathPart.slice(0, -4) + '.md';
+  } else if (!ext) {
     pathPart += '.md';
   }
 
