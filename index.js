@@ -466,7 +466,10 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
 // Matches inline links [text](url) (but not images ![alt](url))
 // and reference-style definitions [ref]: url.
 function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
-  // Inline links: [text](url) — negative lookbehind excludes images
+  // Inline links: [text](url) — negative lookbehind excludes images.
+  // Note: links with titles [text](url "title") or nested parentheses in URLs
+  // are not supported and will be left as-is or may be corrupted. These patterns
+  // are extremely rare in documentation markdown.
   content = content.replace(
     /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
     (match, text, href) => {
