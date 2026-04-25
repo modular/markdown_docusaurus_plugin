@@ -464,10 +464,19 @@ function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl) {
     }
   );
 
-  // Reference-style link definitions: [ref]: url
+  // Collect labels used by image references (![alt][label]) so we skip them
+  const imageRefLabels = new Set();
+  const imageRefPattern = /!\[[^\]]*\]\[([^\]]+)\]/g;
+  let imgMatch;
+  while ((imgMatch = imageRefPattern.exec(content)) !== null) {
+    imageRefLabels.add(imgMatch[1].toLowerCase());
+  }
+
+  // Reference-style link definitions: [ref]: url (skip image labels)
   content = content.replace(
     /^\[([^\]]+)\]:\s+(\S+)$/gm,
     (match, ref, href) => {
+      if (imageRefLabels.has(ref.toLowerCase())) return match;
       const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl);
       return resolved ? `[${ref}]: ${resolved}` : match;
     }
