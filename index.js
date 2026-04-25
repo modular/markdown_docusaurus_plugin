@@ -413,6 +413,69 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   return content;
 }
 
+// Resolve a URL href to a fully-qualified .md URL.
+// Handles relative paths (./foo, ../bar), site-root-absolute paths (/docs/foo),
+// fragments (#section), and already-qualified URLs (https://...).
+function resolveLink(href, pageUrlDir, siteUrl) {
+  if (!href
+    || href.startsWith('http://')
+    || href.startsWith('https://')
+    || href.startsWith('mailto:')
+    || href.startsWith('#')) {
+    return null;
+  }
+
+  const hashIdx = href.indexOf('#');
+  let pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+  const fragment = hashIdx >= 0 ? href.slice(hashIdx) : '';
+
+  if (!pathPart) return null;
+
+  if (pathPart.startsWith('/')) {
+    // Site-root-absolute — use as-is
+  } else {
+    // Relative — resolve against the current page's URL directory
+    pathPart = path.posix.join(pageUrlDir, pathPart);
+  }
+
+  pathPart = path.posix.normalize(pathPart);
+
+  if (pathPart.endsWith('/') && pathPart.length > 1) {
+    pathPart = pathPart.slice(0, -1);
+  }
+
+  if (!pathPart.endsWith('.md')) {
+    pathPart += '.md';
+  }
+
+  return siteUrl + pathPart + fragment;
+}
+
+// Rewrite internal markdown links to fully-qualified .md URLs.
+// Matches inline links [text](url) (but not images ![alt](url))
+// and reference-style definitions [ref]: url.
+function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl) {
+  // Inline links: [text](url) — negative lookbehind excludes images
+  content = content.replace(
+    /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
+    (match, text, href) => {
+      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl);
+      return resolved ? `[${text}](${resolved})` : match;
+    }
+  );
+
+  // Reference-style link definitions: [ref]: url
+  content = content.replace(
+    /^\[([^\]]+)\]:\s+(\S+)$/gm,
+    (match, ref, href) => {
+      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl);
+      return resolved ? `[${ref}]: ${resolved}` : match;
+    }
+  );
+
+  return content;
+}
+
 // Recursively find all markdown files in a directory (both .md and .mdx)
 function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
   const files = fs.readdirSync(dir);
@@ -491,6 +554,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const copyButtonText = options.copyButtonText || 'Copy page';
   const copiedButtonText = options.copiedButtonText || 'Copied';
   const supportDirectoryIndex = options.supportDirectoryIndex || false;
+  const fullyQualifiedLinks = options.fullyQualifiedLinks || false;
 
   return {
     name: 'markdown-source-plugin',
@@ -509,6 +573,9 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     async postBuild({ outDir }) {
       const docsDir = path.join(context.siteDir, docsDirName);
       const buildDir = outDir;
+      const siteUrl = fullyQualifiedLinks
+        ? (options.siteUrl || context.siteConfig.url).replace(/\/$/, '')
+        : '';
 
       console.log('[markdown-source-plugin] Copying markdown source files...');
 
@@ -540,7 +607,15 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           const content = await fs.readFile(sourcePath, 'utf8');
 
           // Clean markdown for raw display
-          const cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
+          let cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
+
+          // Rewrite internal links to fully-qualified .md URLs
+          if (fullyQualifiedLinks) {
+            const pageUrlDir = destFile === 'index.md'
+              ? '/'
+              : '/' + destFile.replace(/\.md$/, '') + '/';
+            cleanedContent = convertLinksToAbsoluteUrls(cleanedContent, pageUrlDir, siteUrl);
+          }
 
           // Write the cleaned content
           await fs.writeFile(destPath, cleanedContent, 'utf8');
