@@ -92,10 +92,10 @@ module.exports = {
       // self-contained for LLMs and external tools. (default: false)
       fullyQualifiedLinks: false,
 
-      // Override the site URL used when fullyQualifiedLinks is enabled.
-      // By default the plugin reads context.siteConfig.url from your
-      // Docusaurus config. (default: undefined — uses Docusaurus site URL)
-      // siteUrl: 'https://example.com',
+      // Override the base URL used when fullyQualifiedLinks is enabled.
+      // By default the plugin uses context.siteConfig.url + baseUrl
+      // from your Docusaurus config. (default: undefined — auto-detected)
+      // siteUrl: 'https://example.com/docs',
     }],
   ],
 };
@@ -109,18 +109,28 @@ This makes the raw markdown useful outside the browser — for example, when an
 LLM fetches a `.md` file, every link it encounters will be a fetchable URL
 rather than a relative path that only works on the website.
 
+Generated URLs have the form `<siteUrl>/<docPath>.md`, where `<siteUrl>` is
+your Docusaurus `url` + `baseUrl` (e.g. `https://example.com/docs`) and
+`<docPath>` is the resolved path relative to the docs root. For example, a
+relative link `./algorithm/` in `std/index.md` becomes
+`https://example.com/docs/std/algorithm.md`.
+
 The plugin handles two kinds of internal links:
 
 - **Relative** (`./algorithm/`, `../types`) — resolved against the current
-  page's URL directory, then converted to an absolute `.md` URL.
+  file's directory (using `dirname` of the source path), then converted to a
+  fully-qualified `.md` URL.
 - **Site-root-absolute** (`/docs/roadmap`, `/docs/manual/types#string-literals`)
-  — converted directly to an absolute `.md` URL with the fragment preserved.
+  — converted directly to a fully-qualified `.md` URL with the fragment
+  preserved.
 
 External links (`https://...`), anchor-only links (`#section`), and image
-references (`![alt](...)`) are left unchanged.
+references (both inline `![alt](...)` and reference-style `![alt][ref]`) are
+left unchanged.
 
-The site URL is read from your Docusaurus `url` config by default. You can
-override it with the `siteUrl` option if needed.
+The base URL defaults to `url` + `baseUrl` from your Docusaurus config. You can
+override it with the `siteUrl` option if your production URL differs from the
+config.
 
 ### Custom icons
 
