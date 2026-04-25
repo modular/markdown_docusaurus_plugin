@@ -413,6 +413,92 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   return content;
 }
 
+// Resolve a URL href to a fully-qualified .md URL.
+// Handles relative paths (./foo, ../bar), site-root-absolute paths (/docs/foo),
+// fragments (#section), and already-qualified URLs (https://...).
+// docsPrefix is the URL path prefix where docs are served (e.g. '/docs' or ''),
+// used to map site-root-absolute links back to file-space paths.
+function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
+  if (!href
+    || href.startsWith('http://')
+    || href.startsWith('https://')
+    || href.startsWith('mailto:')
+    || href.startsWith('#')) {
+    return null;
+  }
+
+  const hashIdx = href.indexOf('#');
+  let pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href;
+  const fragment = hashIdx >= 0 ? href.slice(hashIdx) : '';
+
+  if (!pathPart) return null;
+
+  if (pathPart.startsWith('/')) {
+    // Site-root-absolute — strip docsPrefix to map from URL space to file space
+    if (docsPrefix && !pathPart.startsWith(docsPrefix + '/') && pathPart !== docsPrefix) {
+      return null;
+    }
+    if (docsPrefix) {
+      pathPart = pathPart.slice(docsPrefix.length) || '/';
+    }
+  } else {
+    // Relative — resolve against the current file's directory
+    pathPart = path.posix.join(pageUrlDir, pathPart);
+  }
+
+  pathPart = path.posix.normalize(pathPart);
+
+  if (pathPart.endsWith('/') && pathPart.length > 1) {
+    pathPart = pathPart.slice(0, -1);
+  }
+
+  const ext = path.posix.extname(pathPart);
+  if (ext === '.mdx') {
+    pathPart = pathPart.slice(0, -4) + '.md';
+  } else if (!ext) {
+    pathPart += '.md';
+  }
+
+  return siteUrl + pathPart + fragment;
+}
+
+// Rewrite internal markdown links to fully-qualified .md URLs.
+// Matches inline links [text](url) (but not images ![alt](url))
+// and reference-style definitions [ref]: url.
+function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
+  // Inline links: [text](url) — negative lookbehind excludes images.
+  // Note: links with titles [text](url "title") or nested parentheses in URLs
+  // are not supported and will be left as-is or may be corrupted. These patterns
+  // are extremely rare in documentation markdown.
+  content = content.replace(
+    /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
+    (match, text, href) => {
+      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      return resolved ? `[${text}](${resolved})` : match;
+    }
+  );
+
+  // Collect labels used by image references (![alt][label]) so we skip them
+  const imageRefLabels = new Set();
+  const imageRefPattern = /!\[[^\]]*\]\[([^\]]+)\]/g;
+  let imgMatch;
+  while ((imgMatch = imageRefPattern.exec(content)) !== null) {
+    imageRefLabels.add(imgMatch[1].toLowerCase());
+  }
+
+  // Reference-style link definitions: [ref]: url (skip image labels)
+  content = content.replace(
+    /^\[([^\]]+)\]:\s+(\S+)$/gm,
+    (match, ref, href) => {
+      if (imageRefLabels.has(ref.toLowerCase())) return match;
+      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      return resolved ? `[${ref}]: ${resolved}` : match;
+    }
+  );
+
+  return content;
+}
+
 // Recursively find all markdown files in a directory (both .md and .mdx)
 function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
   const files = fs.readdirSync(dir);
@@ -491,6 +577,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const copyButtonText = options.copyButtonText || 'Copy page';
   const copiedButtonText = options.copiedButtonText || 'Copied';
   const supportDirectoryIndex = options.supportDirectoryIndex || false;
+  const fullyQualifiedLinks = options.fullyQualifiedLinks || false;
 
   return {
     name: 'markdown-source-plugin',
@@ -509,6 +596,14 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     async postBuild({ outDir }) {
       const docsDir = path.join(context.siteDir, docsDirName);
       const buildDir = outDir;
+      const siteUrl = fullyQualifiedLinks
+        ? (options.siteUrl || (context.siteConfig.url + (context.siteConfig.baseUrl || '/'))).replace(/\/$/, '')
+        : '';
+      // docsPath prefix without trailing slash, used to strip the routing
+      // prefix from site-root-absolute links (e.g. '/docs' from '/docs/foo')
+      const docsPrefix = fullyQualifiedLinks
+        ? docsPath.replace(/\/+$/, '')
+        : '';
 
       console.log('[markdown-source-plugin] Copying markdown source files...');
 
@@ -540,7 +635,14 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           const content = await fs.readFile(sourcePath, 'utf8');
 
           // Clean markdown for raw display
-          const cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
+          let cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
+
+          // Rewrite internal links to fully-qualified .md URLs
+          if (fullyQualifiedLinks) {
+            const fileDir = path.posix.dirname(mdFile);
+            const pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
+            cleanedContent = convertLinksToAbsoluteUrls(cleanedContent, pageUrlDir, siteUrl, docsPrefix);
+          }
 
           // Write the cleaned content
           await fs.writeFile(destPath, cleanedContent, 'utf8');
