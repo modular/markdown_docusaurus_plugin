@@ -574,7 +574,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       const docsDir = path.join(context.siteDir, docsDirName);
       const buildDir = outDir;
       const siteUrl = fullyQualifiedLinks
-        ? (options.siteUrl || context.siteConfig.url).replace(/\/$/, '')
+        ? (options.siteUrl || (context.siteConfig.url + (context.siteConfig.baseUrl || '/'))).replace(/\/$/, '')
         : '';
 
       console.log('[markdown-source-plugin] Copying markdown source files...');
@@ -611,9 +611,8 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
 
           // Rewrite internal links to fully-qualified .md URLs
           if (fullyQualifiedLinks) {
-            const pageUrlDir = destFile === 'index.md'
-              ? '/'
-              : '/' + destFile.replace(/\.md$/, '') + '/';
+            const fileDir = path.posix.dirname(mdFile);
+            const pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
             cleanedContent = convertLinksToAbsoluteUrls(cleanedContent, pageUrlDir, siteUrl);
           }
 
