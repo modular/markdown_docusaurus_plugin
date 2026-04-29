@@ -224,10 +224,9 @@ swizzling or DOM reordering is needed.
 
   // HTML directive injected before <body> content (new)
   htmlDirective:
-    'For the complete documentation index, see '
-    + '<a href="/llms.txt">llms.txt</a>. '
-    + 'Markdown versions of all pages are available by '
-    + 'appending .md to any URL.',
+    'To view this page as Markdown, append `.md` to the URL. '
+    + 'For the complete documentation index, see '
+    + '<a href="/llms.txt">llms.txt</a>.',
 }]
 ```
 
