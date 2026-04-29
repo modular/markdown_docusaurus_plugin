@@ -102,6 +102,12 @@ module.exports = {
       // plugin also provides a <LlmsDirective /> theme component for
       // placement on any page. (default: null — disabled)
       // directive: '> For the full docs index, see [llms.txt](/llms.txt).\n> Markdown versions of all pages are available by appending .md to any URL.',
+
+      // HTML string injected as a <blockquote class="llms-directive">
+      // before the Docusaurus React root via preBodyTags. Ensures agents
+      // on the HTML path encounter the directive before navbar/sidebar
+      // content. (default: null — disabled)
+      // htmlDirective: 'To view this page as Markdown, append `.md` to the URL. For the full docs index, see <a href="/llms.txt">llms.txt</a>.',
     }],
   ],
 };
@@ -196,6 +202,39 @@ export default function HomePage() {
 ```
 
 When `directive` is not configured, the component renders nothing.
+
+### Early HTML directive (`htmlDirective`)
+
+The `directive` option places the blockquote inside each page's `<main>`
+content area, which works well for the `.md` path. However, on the HTML path,
+Docusaurus renders a navbar and sidebar before `<main>`, so agents using
+Turndown (HTML-to-markdown conversion) may not reach the directive until deep
+into the output.
+
+The `htmlDirective` option solves this by injecting the directive as the very
+first element in `<body>`, before the Docusaurus React root. It uses the
+Docusaurus `injectHtmlTags` lifecycle with `preBodyTags`, so no component
+swizzling or DOM reordering is needed.
+
+```javascript
+['docusaurus-markdown-source-plugin', {
+  // Markdown directive for .md files (existing)
+  directive: '> For the full docs index, see [llms.txt](/llms.txt).\n'
+           + '> Markdown versions available by appending .md to any URL.',
+
+  // HTML directive injected before <body> content (new)
+  htmlDirective:
+    'To view this page as Markdown, append `.md` to the URL. '
+    + 'For the complete documentation index, see '
+    + '<a href="/llms.txt">llms.txt</a>.',
+}]
+```
+
+The injected element is a `<blockquote class="llms-directive">`, so the same
+CSS that hides the in-page directive (e.g. `clip-path: inset(50%)`) applies
+here too.
+
+When `htmlDirective` is not configured, nothing is injected.
 
 ### Custom icons
 
