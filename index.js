@@ -350,6 +350,16 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   // 7. Remove div tags (preserve inner content)
   content = removeDivTags(content);
 
+  // 7b. Strip <section> tags (preserve inner content, same as div removal)
+  content = content.replace(/<section[^>]*>/gi, '');
+  content = content.replace(/<\/section>/gi, '');
+
+  // 7c. Convert <b> tags to markdown bold
+  content = content.replace(/<b>([^<]*)<\/b>/g, '**$1**');
+
+  // 7d. Remove zero-width spaces (U+200B) used in API reference docs
+  content = content.replace(/\u200B/g, '');
+
   // 7. Convert HTML images to markdown
   // Pattern: <p align="center"><img src={require('./path').default} alt="..." width="..." /></p>
   content = content.replace(
