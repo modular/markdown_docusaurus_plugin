@@ -107,7 +107,7 @@ module.exports = {
       // before the Docusaurus React root via preBodyTags. Ensures agents
       // on the HTML path encounter the directive before navbar/sidebar
       // content. (default: null — disabled)
-      // htmlDirective: 'For the full docs index, see <a href="/llms.txt">llms.txt</a>.',
+      // htmlDirective: 'To view this page as Markdown, append `.md` to the URL. For the full docs index, see <a href="/llms.txt">llms.txt</a>.',
     }],
   ],
 };
