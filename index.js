@@ -579,6 +579,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const supportDirectoryIndex = options.supportDirectoryIndex || false;
   const fullyQualifiedLinks = options.fullyQualifiedLinks || false;
   const directive = options.directive || null;
+  const htmlDirective = options.htmlDirective || null;
 
   return {
     name: 'markdown-source-plugin',
@@ -592,6 +593,19 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
       setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, directive });
+    },
+
+    injectHtmlTags() {
+      if (!htmlDirective) return {};
+      return {
+        preBodyTags: [
+          {
+            tagName: 'blockquote',
+            attributes: { class: 'llms-directive' },
+            innerHTML: htmlDirective,
+          },
+        ],
+      };
     },
 
     async postBuild({ outDir }) {
