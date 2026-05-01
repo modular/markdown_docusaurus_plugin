@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-05-01
+
+### Fixed
+
+- **`fullyQualifiedLinks`** now rewrites site-root links under configured **`blog`** `routeBasePath` values (e.g. `/releases/...`), not only the docs prefix.
+- Relative **`img/`** image URLs in blog emitted markdown use the blog route base (via **`assetBasePath`**) instead of the docs prefix.
+
+### Security
+
+- Reject blog output paths and slug segments that escape the build directory (`..`, unsafe YAML `slug:` values).
+
+### Changed
+
+- Clarified log line: “image directories” when copying blog images.
+
+## [2.0.3] - 2026-04-30
+
+### Fixed
+
+- Root **`index.md`** / **`index.mdx`** in a `blog` tree emits **`{routeBasePath}.md`** (e.g. `releases.md`) so list-page raw markdown matches `/{routeBasePath}/` → `.md` URLs instead of `/{routeBasePath}/index.md`.
+
+## [2.0.2] - 2026-04-30
+
+### Added
+
+- **`blog`** plugin option: array of `{ path, routeBasePath?, exclude? }` to emit cleaned `.md` files for content served by **`@docusaurus/plugin-content-blog`**, using the same slug rules as that plugin (`slug` front matter or filename-derived slug, including date-style filenames). Reuses the existing markdown cleaning, directive prepend, `fullyQualifiedLinks`, and `img/` copying pipeline as for docs.
+
+### Documentation
+
+- README section for **`blog`**, fork differences bullet, and config example.
+
+### Modular fork history (merged before `blog`; omitted from earlier CHANGELOG releases)
+
+Compressed summary of work landed between the prior **v2.0.1** changelog snapshot (mostly README/documentation notes on upstream FlyNumber **v2.0.x**) and the **`blog`** feature—the functionality shipped incrementally via pinned commits / PRs **#1–#13** on this fork rather than separate semver bumps documented here.
+
+- **Configurable UX:** **`docsPath`** plus injection/widget knobs (**`containerSelector`**, **`widgetType`**, **`copyButtonText`**, **`copiedButtonText`**, icon sizing/overrides); refactored client plumbing (`MarkdownCopyButton`/hooks/icons architecture).
+- **Copy reliability (#1–#8):** correct `.md` fetches for trailing-slash URLs and **`index.md`** sources; **`credentials: 'include'`**; clearer clipboard failures vs opaque **`NotAllowedError`** on Safari; Safari-compatible **`ClipboardItem`** flows using **`text/plain`** payloads.
+- **LLM-style publishing (#10–#12):** **`fullyQualifiedLinks`** rewrites internal links to absolute `.md` URLs; **`directive`** prepends the llms-txt blockquote on emitted markdown (with **`LlmsDirective`** theme hook); **`htmlDirective`** injects an equivalent hint earlier in HTML via **`preBodyTags`**.
+- **Richer MD → Markdown conversion:** **`.mdx`** plus **`title`** from front matter as leading **`#`**; **`DynamicCode`** → fenced blocks with template-literal cleanup; **`export const`** object arrays → bullets; **`ConditionalContent`**, **`Requirements`**, MDX **`{/* … */}`** comments; **`Tabs`**/**`TabItem`** (nested layouts, arbitrary attribute order, custom **`*Tabs`** components); **`details`**/**`summary`**; unwrap/remove **`ModelSelector`**, **`InstallModular`**, **`div`** wrappers; **`collapseBlankLines`**; preserve fenced/inline code when stripping JSX noise (#9).
+- **Cleanup polish (#13):** strip stray **`section`** wrappers, normalize **`b`** tags, remove zero-width spaces; assorted indentation fixes for **`DynamicCode`** / **`TabItem`** output.
+
 ## [2.0.1] - 2025-11-24
 
 ### Documentation

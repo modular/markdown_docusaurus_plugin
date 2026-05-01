@@ -310,7 +310,15 @@ function extractTitleFromFrontmatter(content) {
 }
 
 // Clean markdown content for raw display - remove MDX/Docusaurus-specific syntax
-function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
+// `assetBasePath`: URL prefix for rewriting `img/` relative images (defaults to docsPath)
+function cleanMarkdownForDisplay(
+  content,
+  filepath,
+  docsPath = '/docs/',
+  assetBasePath = undefined
+) {
+  const imgUrlBase =
+    assetBasePath !== undefined ? assetBasePath : docsPath;
   // Get the directory path for this file (relative to docs root)
   const fileDir = filepath.replace(/[^/]*$/, ''); // Remove filename, keep directory
 
@@ -402,10 +410,9 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   content = content.replace(
     /!\[([^\]]*)\]\((\.\/)?img\/([^)]+)\)/g,
     (match, alt, relPrefix, filename) => {
-      // Convert to absolute path using configurable docsPath
-      // Ensure docsPath ends with / for proper path joining
-      const normalizedDocsPath = docsPath.endsWith('/') ? docsPath : docsPath + '/';
-      return `![${alt}](${normalizedDocsPath}${fileDir}img/${filename})`;
+      const normalizedBase =
+        imgUrlBase.endsWith('/') ? imgUrlBase : `${imgUrlBase}/`;
+      return `![${alt}](${normalizedBase}${fileDir}img/${filename})`;
     }
   );
 
@@ -428,7 +435,8 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
 // fragments (#section), and already-qualified URLs (https://...).
 // docsPrefix is the URL path prefix where docs are served (e.g. '/docs' or ''),
 // used to map site-root-absolute links back to file-space paths.
-function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
+// extraPathPrefixes: other site-root prefixes (e.g. ['/releases']) for blog routes.
+function resolveLink(href, pageUrlDir, siteUrl, docsPrefix, extraPathPrefixes = []) {
   if (!href
     || href.startsWith('http://')
     || href.startsWith('https://')
@@ -444,12 +452,23 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
   if (!pathPart) return null;
 
   if (pathPart.startsWith('/')) {
-    // Site-root-absolute — strip docsPrefix to map from URL space to file space
-    if (docsPrefix && !pathPart.startsWith(docsPrefix + '/') && pathPart !== docsPrefix) {
-      return null;
+    const prefixes = [];
+    if (docsPrefix) prefixes.push(docsPrefix);
+    for (const p of extraPathPrefixes) {
+      if (p && !prefixes.includes(p)) prefixes.push(p);
     }
-    if (docsPrefix) {
-      pathPart = pathPart.slice(docsPrefix.length) || '/';
+    if (prefixes.length > 0) {
+      prefixes.sort((a, b) => b.length - a.length);
+      let matched = null;
+      for (const p of prefixes) {
+        if (pathPart === p || pathPart.startsWith(`${p}/`)) {
+          matched = p;
+          break;
+        }
+      }
+      if (!matched) return null;
+      pathPart = pathPart.slice(matched.length) || '/';
+      if (!pathPart.startsWith('/')) pathPart = `/${pathPart}`;
     }
   } else {
     // Relative — resolve against the current file's directory
@@ -475,7 +494,13 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
 // Rewrite internal markdown links to fully-qualified .md URLs.
 // Matches inline links [text](url) (but not images ![alt](url))
 // and reference-style definitions [ref]: url.
-function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
+function convertLinksToAbsoluteUrls(
+  content,
+  pageUrlDir,
+  siteUrl,
+  docsPrefix,
+  extraPathPrefixes = []
+) {
   // Inline links: [text](url) — negative lookbehind excludes images.
   // Note: links with titles [text](url "title") or nested parentheses in URLs
   // are not supported and will be left as-is or may be corrupted. These patterns
@@ -483,7 +508,13 @@ function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
   content = content.replace(
     /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
     (match, text, href) => {
-      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      const resolved = resolveLink(
+        href.trim(),
+        pageUrlDir,
+        siteUrl,
+        docsPrefix,
+        extraPathPrefixes
+      );
       return resolved ? `[${text}](${resolved})` : match;
     }
   );
@@ -501,7 +532,13 @@ function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
     /^\[([^\]]+)\]:\s+(\S+)$/gm,
     (match, ref, href) => {
       if (imageRefLabels.has(ref.toLowerCase())) return match;
-      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      const resolved = resolveLink(
+        href.trim(),
+        pageUrlDir,
+        siteUrl,
+        docsPrefix,
+        extraPathPrefixes
+      );
       return resolved ? `[${ref}]: ${resolved}` : match;
     }
   );
@@ -527,6 +564,137 @@ function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
   });
 
   return fileList;
+}
+
+/*
+ * --- Blog plugin URL scheme (@docusaurus/plugin-content-blog) ---
+ * For docs content, emitted `.md` paths typically mirror each source file’s path
+ * under docsDir (aligned with how @docusaurus/plugin-content-docs routes pages).
+ * Blog posts differ: the live URL is baseUrl + routeBasePath + slug, where slug is
+ * optional front matter `slug:` or else derived from the filename (including
+ * date-based filenames)—not necessarily the same as the file’s relative path on disk.
+ * The helpers below only fix output path + pageUrlDir so `.md` URLs match those HTML
+ * routes (e.g. `/releases/foo/` ↔ `/releases/foo.md`). Markdown cleaning uses the same
+ * pipeline as docs; only routing math differs here.
+ *
+ * Exception: root-level `index.md` / `index.mdx` backs the blog list route
+ * `/{routeBasePath}/`, whose `.md` twin is `/{routeBasePath}.md`, not `.../index.md`.
+ */
+const DATE_FILENAME_REGEX =
+  /^(?<folder>.*)(?<date>\d{4}[-/]\d{1,2}[-/]\d{1,2})[-/]?(?<text>.*?)(?:\/index)?\.mdx?$/;
+
+/** Same filename → slug mapping as plugin-content-blog (`parseBlogFileName`). */
+function parseBlogFileName(blogSourceRelative) {
+  const dateFilenameMatch = blogSourceRelative.match(DATE_FILENAME_REGEX);
+  if (dateFilenameMatch) {
+    const { folder, text, date: dateString } = dateFilenameMatch.groups;
+    const slugDate = dateString.replace(/-/g, '/');
+    const slug = `/${slugDate}/${folder}${text}`;
+    return { slug };
+  }
+  const text = blogSourceRelative.replace(/(?:\/index)?\.mdx?$/, '');
+  const slug = `/${text}`;
+  return { slug };
+}
+
+/** Optional YAML `slug:` override — same source as plugin-content-blog. */
+function parseSlugFromFrontmatter(content) {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return undefined;
+  const yaml = match[1];
+  const slugMatch = yaml.match(/^\s*slug:\s*(.+)$/m);
+  if (!slugMatch) return undefined;
+  let raw = slugMatch[1].trim();
+  if (
+    (raw.startsWith('"') && raw.endsWith('"')) ||
+    (raw.startsWith("'") && raw.endsWith("'"))
+  ) {
+    raw = raw.slice(1, -1).trim();
+  }
+  if (!raw) return undefined;
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+/** Resolves slug exactly like blog posts: front matter wins, else filename rules. */
+function resolveBlogPostSlug(blogSourceRelative, fileContent) {
+  const fromFm = parseSlugFromFrontmatter(fileContent);
+  if (fromFm) return fromFm;
+  const posixRel = blogSourceRelative.replace(/\\/g, '/');
+  return parseBlogFileName(posixRel).slug;
+}
+
+function isBlogMarkdownExcluded(mdRelativePath, excludeList) {
+  // Mirrors typical plugin-content-blog `exclude` (basename or relative path).
+  if (!excludeList || excludeList.length === 0) return false;
+  const norm = mdRelativePath.replace(/\\/g, '/');
+  return excludeList.some(
+    (pat) => pat === norm || pat === path.basename(mdRelativePath)
+  );
+}
+
+function assertSafeBlogSlugSegments(slugTrim, mdFile) {
+  if (!slugTrim || slugTrim.includes('\\')) {
+    throw new Error(`Invalid blog slug for ${mdFile}`);
+  }
+  for (const seg of slugTrim.split('/')) {
+    if (seg === '' || seg === '.' || seg === '..') {
+      throw new Error(`Invalid blog slug segment in ${mdFile}: ${slugTrim}`);
+    }
+  }
+}
+
+/** Resolved absolute path inside buildDir, or throws if dest escapes buildDir. */
+function resolveSafeDestPath(buildDir, destRelPosix) {
+  const parts = String(destRelPosix)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((p) => p !== '' && p !== '.');
+  if (parts.some((p) => p === '..')) {
+    throw new Error(`Unsafe output path: ${destRelPosix}`);
+  }
+  const resolvedBuild = path.resolve(buildDir);
+  const resolvedDest = path.resolve(resolvedBuild, ...parts);
+  const rel = path.relative(resolvedBuild, resolvedDest);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Output path escapes build directory: ${destRelPosix}`);
+  }
+  return resolvedDest;
+}
+
+async function writeProcessedMarkdownToBuild({
+  sourcePath,
+  mdFileRelativeForCleaning,
+  destPath,
+  pageUrlDir,
+  docsPath,
+  assetBasePath,
+  directive,
+  fullyQualifiedLinks,
+  siteUrl,
+  docsPrefix,
+  extraLinkPrefixes = [],
+}) {
+  await fs.ensureDir(path.dirname(destPath));
+  const content = await fs.readFile(sourcePath, 'utf8');
+  let cleanedContent = cleanMarkdownForDisplay(
+    content,
+    mdFileRelativeForCleaning,
+    docsPath,
+    assetBasePath
+  );
+  if (directive) {
+    cleanedContent = directive + '\n\n' + cleanedContent;
+  }
+  if (fullyQualifiedLinks) {
+    cleanedContent = convertLinksToAbsoluteUrls(
+      cleanedContent,
+      pageUrlDir,
+      siteUrl,
+      docsPrefix,
+      extraLinkPrefixes
+    );
+  }
+  await fs.writeFile(destPath, cleanedContent, 'utf8');
 }
 
 // Copy image directories from docs to build
@@ -590,6 +758,12 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
   const fullyQualifiedLinks = options.fullyQualifiedLinks || false;
   const directive = options.directive || null;
   const htmlDirective = options.htmlDirective || null;
+  /**
+   * Extra markdown trees served by @docusaurus/plugin-content-blog (see blog plugin
+   * `path` / `routeBasePath`). Each entry uses blog slug rules for output paths only.
+   * @type {{ path: string; routeBasePath?: string; exclude?: string[] }[]}
+   */
+  const blog = options.blog || [];
 
   return {
     name: 'markdown-source-plugin',
@@ -630,6 +804,15 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         ? docsPath.replace(/\/+$/, '')
         : '';
 
+      const blogLinkPrefixes = [];
+      for (const root of blog) {
+        const rb = String(root.routeBasePath ?? root.path).replace(/^\/+|\/+$/g, '');
+        if (rb && !rb.split('/').some((s) => s === '..')) {
+          const pref = `/${rb}`;
+          if (!blogLinkPrefixes.includes(pref)) blogLinkPrefixes.push(pref);
+        }
+      }
+
       console.log('[markdown-source-plugin] Copying markdown source files...');
 
       // Find all markdown files in docs directory
@@ -650,32 +833,24 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
         }
 
-        const destPath = path.join(buildDir, destFile);
+        const destPath = resolveSafeDestPath(buildDir, destFile);
 
         try {
-          // Ensure destination directory exists
-          await fs.ensureDir(path.dirname(destPath));
-
-          // Read the markdown file
-          const content = await fs.readFile(sourcePath, 'utf8');
-
-          // Clean markdown for raw display
-          let cleanedContent = cleanMarkdownForDisplay(content, mdFile, docsPath);
-
-          // Prepend the llms-txt-directive blockquote
-          if (directive) {
-            cleanedContent = directive + '\n\n' + cleanedContent;
-          }
-
-          // Rewrite internal links to fully-qualified .md URLs
-          if (fullyQualifiedLinks) {
-            const fileDir = path.posix.dirname(mdFile);
-            const pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
-            cleanedContent = convertLinksToAbsoluteUrls(cleanedContent, pageUrlDir, siteUrl, docsPrefix);
-          }
-
-          // Write the cleaned content
-          await fs.writeFile(destPath, cleanedContent, 'utf8');
+          const fileDir = path.posix.dirname(mdFile);
+          const pageUrlDir =
+            fileDir === '.' ? '/' : '/' + fileDir + '/';
+          await writeProcessedMarkdownToBuild({
+            sourcePath,
+            mdFileRelativeForCleaning: mdFile,
+            destPath,
+            pageUrlDir,
+            docsPath,
+            directive,
+            fullyQualifiedLinks,
+            siteUrl,
+            docsPrefix,
+            extraLinkPrefixes: blogLinkPrefixes,
+          });
           copiedCount++;
 
           console.log(`  ✓ Processed: ${mdFile} -> ${destFile}`);
@@ -684,12 +859,122 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         }
       }
 
-      console.log(`[markdown-source-plugin] Successfully copied ${copiedCount} markdown files`);
+      const docsMdCount = copiedCount;
+      console.log(
+        `[markdown-source-plugin] Docs: ${docsMdCount} markdown file(s)`
+      );
 
-      // Copy image directories
+      // Copy image directories from docs
       console.log('[markdown-source-plugin] Copying image directories...');
-      const imgDirCount = await copyImageDirectories(docsDir, buildDir);
+      let imgDirCount = await copyImageDirectories(docsDir, buildDir);
       console.log(`[markdown-source-plugin] Successfully copied ${imgDirCount} image directories`);
+
+      // Blog instances: emit .md files under routeBasePath using plugin-content-blog slug URLs.
+      for (const root of blog) {
+        const blogDir = path.join(context.siteDir, root.path);
+        // Mirrors plugin-content-blog: omit routeBasePath to use the same segment as `path`.
+        const routeBasePath = String(root.routeBasePath ?? root.path).replace(
+          /^\/+|\/+$/g,
+          ''
+        );
+        if (
+          !routeBasePath ||
+          routeBasePath.split('/').some((s) => s === '..' || s === '')
+        ) {
+          console.warn(
+            `[markdown-source-plugin] blog: invalid routeBasePath for ${root.path}, skipping`
+          );
+          continue;
+        }
+        const exclude = root.exclude || [];
+
+        if (!(await fs.pathExists(blogDir))) {
+          console.warn(
+            `[markdown-source-plugin] blog: missing directory ${blogDir}`
+          );
+          continue;
+        }
+
+        console.log(
+          `[markdown-source-plugin] Blog (${root.path}) -> /${routeBasePath}/…`
+        );
+
+        const blogMdFiles = findMarkdownFiles(blogDir);
+        let blogCopied = 0;
+
+        for (const mdFile of blogMdFiles) {
+          if (isBlogMarkdownExcluded(mdFile, exclude)) {
+            console.log(`  ⊗ Skipped (exclude): ${mdFile}`);
+            continue;
+          }
+
+          const sourcePath = path.join(blogDir, mdFile);
+
+          try {
+            const raw = await fs.readFile(sourcePath, 'utf8');
+            const posixMd = mdFile.replace(/\\/g, '/');
+            const isBlogListPageSource =
+              posixMd === 'index.md' || posixMd === 'index.mdx';
+
+            let destFile;
+            let pageUrlDir;
+            const mdFileForCleaning = path.posix.join(routeBasePath, posixMd);
+
+            if (isBlogListPageSource) {
+              // Blog list URL is /{routeBasePath}/; append-.md convention is /{routeBasePath}.md
+              destFile = `${routeBasePath}.md`;
+              pageUrlDir = `/${routeBasePath}/`;
+            } else {
+              // Output path mirrors blog permalink (routeBasePath + slug), not raw fs path.
+              const slug = resolveBlogPostSlug(mdFile, raw);
+              const slugTrim = slug.startsWith('/') ? slug.slice(1) : slug;
+              assertSafeBlogSlugSegments(slugTrim, mdFile);
+              destFile = path.posix.normalize(
+                path.posix.join(routeBasePath, `${slugTrim}.md`)
+              );
+              pageUrlDir =
+                '/' + path.posix.join(routeBasePath, slugTrim) + '/';
+            }
+
+            const destPath = resolveSafeDestPath(buildDir, destFile);
+            const blogAssetBase = `/${routeBasePath}/`;
+            await writeProcessedMarkdownToBuild({
+              sourcePath,
+              mdFileRelativeForCleaning: mdFileForCleaning,
+              destPath,
+              pageUrlDir,
+              docsPath,
+              assetBasePath: blogAssetBase,
+              directive,
+              fullyQualifiedLinks,
+              siteUrl,
+              docsPrefix,
+              extraLinkPrefixes: blogLinkPrefixes,
+            });
+            blogCopied++;
+            copiedCount++;
+            console.log(`  ✓ Processed blog: ${mdFile} -> ${destFile}`);
+          } catch (error) {
+            console.error(`  ✗ Failed to process blog file ${mdFile}:`, error.message);
+          }
+        }
+
+        console.log(
+          `[markdown-source-plugin] Blog segment "${root.path}": ${blogCopied} markdown file(s)`
+        );
+
+        const blogImgCount = await copyImageDirectories(blogDir, buildDir);
+        imgDirCount += blogImgCount;
+        if (blogImgCount > 0) {
+          console.log(
+            `[markdown-source-plugin] Copied ${blogImgCount} image directories under "${root.path}"`
+          );
+        }
+      }
+
+      console.log(
+        `[markdown-source-plugin] Total markdown files emitted: ${copiedCount}`
+      );
     },
   };
 };
