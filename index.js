@@ -310,7 +310,15 @@ function extractTitleFromFrontmatter(content) {
 }
 
 // Clean markdown content for raw display - remove MDX/Docusaurus-specific syntax
-function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
+// `assetBasePath`: URL prefix for rewriting `img/` relative images (defaults to docsPath)
+function cleanMarkdownForDisplay(
+  content,
+  filepath,
+  docsPath = '/docs/',
+  assetBasePath = undefined
+) {
+  const imgUrlBase =
+    assetBasePath !== undefined ? assetBasePath : docsPath;
   // Get the directory path for this file (relative to docs root)
   const fileDir = filepath.replace(/[^/]*$/, ''); // Remove filename, keep directory
 
@@ -402,10 +410,9 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
   content = content.replace(
     /!\[([^\]]*)\]\((\.\/)?img\/([^)]+)\)/g,
     (match, alt, relPrefix, filename) => {
-      // Convert to absolute path using configurable docsPath
-      // Ensure docsPath ends with / for proper path joining
-      const normalizedDocsPath = docsPath.endsWith('/') ? docsPath : docsPath + '/';
-      return `![${alt}](${normalizedDocsPath}${fileDir}img/${filename})`;
+      const normalizedBase =
+        imgUrlBase.endsWith('/') ? imgUrlBase : `${imgUrlBase}/`;
+      return `![${alt}](${normalizedBase}${fileDir}img/${filename})`;
     }
   );
 
@@ -428,7 +435,8 @@ function cleanMarkdownForDisplay(content, filepath, docsPath = '/docs/') {
 // fragments (#section), and already-qualified URLs (https://...).
 // docsPrefix is the URL path prefix where docs are served (e.g. '/docs' or ''),
 // used to map site-root-absolute links back to file-space paths.
-function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
+// extraPathPrefixes: other site-root prefixes (e.g. ['/releases']) for blog routes.
+function resolveLink(href, pageUrlDir, siteUrl, docsPrefix, extraPathPrefixes = []) {
   if (!href
     || href.startsWith('http://')
     || href.startsWith('https://')
@@ -444,12 +452,23 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
   if (!pathPart) return null;
 
   if (pathPart.startsWith('/')) {
-    // Site-root-absolute — strip docsPrefix to map from URL space to file space
-    if (docsPrefix && !pathPart.startsWith(docsPrefix + '/') && pathPart !== docsPrefix) {
-      return null;
+    const prefixes = [];
+    if (docsPrefix) prefixes.push(docsPrefix);
+    for (const p of extraPathPrefixes) {
+      if (p && !prefixes.includes(p)) prefixes.push(p);
     }
-    if (docsPrefix) {
-      pathPart = pathPart.slice(docsPrefix.length) || '/';
+    if (prefixes.length > 0) {
+      prefixes.sort((a, b) => b.length - a.length);
+      let matched = null;
+      for (const p of prefixes) {
+        if (pathPart === p || pathPart.startsWith(`${p}/`)) {
+          matched = p;
+          break;
+        }
+      }
+      if (!matched) return null;
+      pathPart = pathPart.slice(matched.length) || '/';
+      if (!pathPart.startsWith('/')) pathPart = `/${pathPart}`;
     }
   } else {
     // Relative — resolve against the current file's directory
@@ -475,7 +494,13 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix) {
 // Rewrite internal markdown links to fully-qualified .md URLs.
 // Matches inline links [text](url) (but not images ![alt](url))
 // and reference-style definitions [ref]: url.
-function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
+function convertLinksToAbsoluteUrls(
+  content,
+  pageUrlDir,
+  siteUrl,
+  docsPrefix,
+  extraPathPrefixes = []
+) {
   // Inline links: [text](url) — negative lookbehind excludes images.
   // Note: links with titles [text](url "title") or nested parentheses in URLs
   // are not supported and will be left as-is or may be corrupted. These patterns
@@ -483,7 +508,13 @@ function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
   content = content.replace(
     /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
     (match, text, href) => {
-      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      const resolved = resolveLink(
+        href.trim(),
+        pageUrlDir,
+        siteUrl,
+        docsPrefix,
+        extraPathPrefixes
+      );
       return resolved ? `[${text}](${resolved})` : match;
     }
   );
@@ -501,7 +532,13 @@ function convertLinksToAbsoluteUrls(content, pageUrlDir, siteUrl, docsPrefix) {
     /^\[([^\]]+)\]:\s+(\S+)$/gm,
     (match, ref, href) => {
       if (imageRefLabels.has(ref.toLowerCase())) return match;
-      const resolved = resolveLink(href.trim(), pageUrlDir, siteUrl, docsPrefix);
+      const resolved = resolveLink(
+        href.trim(),
+        pageUrlDir,
+        siteUrl,
+        docsPrefix,
+        extraPathPrefixes
+      );
       return resolved ? `[${ref}]: ${resolved}` : match;
     }
   );
@@ -595,23 +632,55 @@ function isBlogMarkdownExcluded(mdRelativePath, excludeList) {
   );
 }
 
+function assertSafeBlogSlugSegments(slugTrim, mdFile) {
+  if (!slugTrim || slugTrim.includes('\\')) {
+    throw new Error(`Invalid blog slug for ${mdFile}`);
+  }
+  for (const seg of slugTrim.split('/')) {
+    if (seg === '' || seg === '.' || seg === '..') {
+      throw new Error(`Invalid blog slug segment in ${mdFile}: ${slugTrim}`);
+    }
+  }
+}
+
+/** Resolved absolute path inside buildDir, or throws if dest escapes buildDir. */
+function resolveSafeDestPath(buildDir, destRelPosix) {
+  const parts = String(destRelPosix)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((p) => p !== '' && p !== '.');
+  if (parts.some((p) => p === '..')) {
+    throw new Error(`Unsafe output path: ${destRelPosix}`);
+  }
+  const resolvedBuild = path.resolve(buildDir);
+  const resolvedDest = path.resolve(resolvedBuild, ...parts);
+  const rel = path.relative(resolvedBuild, resolvedDest);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`Output path escapes build directory: ${destRelPosix}`);
+  }
+  return resolvedDest;
+}
+
 async function writeProcessedMarkdownToBuild({
   sourcePath,
   mdFileRelativeForCleaning,
   destPath,
   pageUrlDir,
   docsPath,
+  assetBasePath,
   directive,
   fullyQualifiedLinks,
   siteUrl,
   docsPrefix,
+  extraLinkPrefixes = [],
 }) {
   await fs.ensureDir(path.dirname(destPath));
   const content = await fs.readFile(sourcePath, 'utf8');
   let cleanedContent = cleanMarkdownForDisplay(
     content,
     mdFileRelativeForCleaning,
-    docsPath
+    docsPath,
+    assetBasePath
   );
   if (directive) {
     cleanedContent = directive + '\n\n' + cleanedContent;
@@ -621,7 +690,8 @@ async function writeProcessedMarkdownToBuild({
       cleanedContent,
       pageUrlDir,
       siteUrl,
-      docsPrefix
+      docsPrefix,
+      extraLinkPrefixes
     );
   }
   await fs.writeFile(destPath, cleanedContent, 'utf8');
@@ -734,6 +804,15 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         ? docsPath.replace(/\/+$/, '')
         : '';
 
+      const blogLinkPrefixes = [];
+      for (const root of blog) {
+        const rb = String(root.routeBasePath ?? root.path).replace(/^\/+|\/+$/g, '');
+        if (rb && !rb.split('/').some((s) => s === '..')) {
+          const pref = `/${rb}`;
+          if (!blogLinkPrefixes.includes(pref)) blogLinkPrefixes.push(pref);
+        }
+      }
+
       console.log('[markdown-source-plugin] Copying markdown source files...');
 
       // Find all markdown files in docs directory
@@ -754,7 +833,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
         }
 
-        const destPath = path.join(buildDir, destFile);
+        const destPath = resolveSafeDestPath(buildDir, destFile);
 
         try {
           const fileDir = path.posix.dirname(mdFile);
@@ -770,6 +849,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
             fullyQualifiedLinks,
             siteUrl,
             docsPrefix,
+            extraLinkPrefixes: blogLinkPrefixes,
           });
           copiedCount++;
 
@@ -797,6 +877,15 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           /^\/+|\/+$/g,
           ''
         );
+        if (
+          !routeBasePath ||
+          routeBasePath.split('/').some((s) => s === '..' || s === '')
+        ) {
+          console.warn(
+            `[markdown-source-plugin] blog: invalid routeBasePath for ${root.path}, skipping`
+          );
+          continue;
+        }
         const exclude = root.exclude || [];
 
         if (!(await fs.pathExists(blogDir))) {
@@ -839,6 +928,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
               // Output path mirrors blog permalink (routeBasePath + slug), not raw fs path.
               const slug = resolveBlogPostSlug(mdFile, raw);
               const slugTrim = slug.startsWith('/') ? slug.slice(1) : slug;
+              assertSafeBlogSlugSegments(slugTrim, mdFile);
               destFile = path.posix.normalize(
                 path.posix.join(routeBasePath, `${slugTrim}.md`)
               );
@@ -846,17 +936,20 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
                 '/' + path.posix.join(routeBasePath, slugTrim) + '/';
             }
 
-            const destPath = path.join(buildDir, destFile);
+            const destPath = resolveSafeDestPath(buildDir, destFile);
+            const blogAssetBase = `/${routeBasePath}/`;
             await writeProcessedMarkdownToBuild({
               sourcePath,
               mdFileRelativeForCleaning: mdFileForCleaning,
               destPath,
               pageUrlDir,
               docsPath,
+              assetBasePath: blogAssetBase,
               directive,
               fullyQualifiedLinks,
               siteUrl,
               docsPrefix,
+              extraLinkPrefixes: blogLinkPrefixes,
             });
             blogCopied++;
             copiedCount++;
@@ -874,7 +967,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         imgDirCount += blogImgCount;
         if (blogImgCount > 0) {
           console.log(
-            `[markdown-source-plugin] Copied ${blogImgCount} image director(ies) under "${root.path}"`
+            `[markdown-source-plugin] Copied ${blogImgCount} image directories under "${root.path}"`
           );
         }
       }

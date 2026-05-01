@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-05-01
+
+### Fixed
+
+- **`fullyQualifiedLinks`** now rewrites site-root links under configured **`blog`** `routeBasePath` values (e.g. `/releases/...`), not only the docs prefix.
+- Relative **`img/`** image URLs in blog emitted markdown use the blog route base (via **`assetBasePath`**) instead of the docs prefix.
+
+### Security
+
+- Reject blog output paths and slug segments that escape the build directory (`..`, unsafe YAML `slug:` values).
+
+### Changed
+
+- Clarified log line: “image directories” when copying blog images.
+
 ## [2.0.3] - 2026-04-30
 
 ### Fixed
