@@ -5,8 +5,8 @@ URLs and adds a button (or drop-down widget) to each page so users can copy the
 Markdown file to their clipboard.
 
 > [!NOTE]
-> This project is not packaged and distributed on npm.
-> This is a fork of [markdown_docusaurus_plugin by FlyNumber](https://github.com/FlyNumber/markdown_docusaurus_plugin)
+> This project is not packaged and distributed on npm. This is a fork of
+> [markdown_docusaurus_plugin by FlyNumber](https://github.com/FlyNumber/markdown_docusaurus_plugin)
 > with some added functionality to support docs.modular.com.
 
 ## Fork differences
@@ -21,6 +21,8 @@ Here are some of the things we added/changed:
   other MDX components (most are specific to docs.modular.com)
 - Adds several user-configuration properties:
   - Specify the path to your docs (previously hard-coded to `/docs`)
+  - Optional `blog` array so `@docusaurus/plugin-content-blog` posts get
+    matching `.md` URLs (same slug rules as the blog plugin)
   - Select the widget type, either original drop-down or new button
   - Specify the DOM element where you want to inject the button/drop-down
     as a CSS selector (default is the page header)
@@ -68,6 +70,15 @@ module.exports = {
       // relative to the site root (default: 'docs')
       docsDir: 'docs',
 
+      // Blog content (@docusaurus/plugin-content-blog): emit `.md` URLs that match
+      // blog permalinks (routeBasePath + slug), not plain filesystem mirroring.
+      blog: [
+        {
+          path: 'releases',
+          exclude: ['archive.md', 'index.md'],
+        },
+      ],
+
       // 'button' for a simple copy button, 'dropdown' for a menu
       // with multiple actions (default: 'button')
       widgetType: 'button',
@@ -112,6 +123,25 @@ module.exports = {
   ],
 };
 ```
+
+### `blog` — match plugin-content-blog URLs
+
+Optional array for Markdown trees served by
+**`@docusaurus/plugin-content-blog`**. The cleaning pipeline is the same as for
+docs; **only** output paths and fully-qualified link bases follow the
+**blog plugin’s URL scheme** (`routeBasePath` + slug from filename rules or
+front matter `slug:`), so appending `.md` matches the HTML route.
+
+Root-level **`index.md`** / **`index.mdx`** (the blog list / hub page at `/{routeBasePath}/`) is written as **`{routeBasePath}.md`** in the build output (e.g. `releases.md`), matching the usual “strip trailing slash and add `.md`” behavior.
+
+Each entry:
+
+- **`path`** — folder relative to the site directory (same as the blog plugin
+  `path`). Used as the URL **`routeBasePath`** when that option is omitted.
+- **`routeBasePath`** — optional URL segment (same meaning as the blog plugin).
+  Defaults to **`path`**; set only when the served route prefix differs from the
+  source folder (unusual).
+- **`exclude`** — optional basenames or relative paths to skip (for example `archive.md`).
 
 ### Fully-qualified links
 
@@ -238,7 +268,8 @@ When `htmlDirective` is not configured, nothing is injected.
 
 ### Custom icons
 
-The plugin uses theme components for icons, which can be overridden in your site's `src/theme/` directory:
+The plugin uses theme components for icons, which can be overridden in your
+site's `src/theme/` directory:
 
 **Override the copy icon:**
 
@@ -266,7 +297,8 @@ export default function MarkdownCheckIcon({ size = 16, style }) {
 }
 ```
 
-This allows you to use your site's existing icon components or any custom SVG icons.
+This allows you to use your site's existing icon components or any custom SVG
+icons.
 
 ### Stylesheet
 
@@ -393,5 +425,5 @@ Or if you set `widgetType: 'dropdown'`, add these styles:
 
 ## Read more
 
-For more information, see the [original repo at
-FlyNumber/markdown_docusaurus_plugin](https://github.com/FlyNumber/markdown_docusaurus_plugin)
+For more information, see the
+[original repo at FlyNumber/markdown_docusaurus_plugin](https://github.com/FlyNumber/markdown_docusaurus_plugin)
