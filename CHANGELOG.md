@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-07-06
+
 ### Fixed
 
 - Docs pages with front matter **`slug: /`** (the docs home page) now emit **`index.md`** (or **`{docsRouteBase}.md`** when `docsPath` is e.g. `/docs/`) instead of mirroring the source filename (e.g. `introduction.md` → `index.md`).
