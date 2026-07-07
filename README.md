@@ -28,7 +28,7 @@ Here are some of the things we added/changed:
     as a CSS selector (default is the page header)
   - Specify the button text
   - Specify the button/widget icons
-- Adds support for `slug: /` frontmatter (other slug customizations are
+- Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
   currently not supported)
 
 ## Add to your project
