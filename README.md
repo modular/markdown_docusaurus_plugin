@@ -28,6 +28,8 @@ Here are some of the things we added/changed:
     as a CSS selector (default is the page header)
   - Specify the button text
   - Specify the button/widget icons
+- Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
+  currently not supported)
 
 ## Add to your project
 
@@ -132,7 +134,10 @@ docs; **only** output paths and fully-qualified link bases follow the
 **blog plugin’s URL scheme** (`routeBasePath` + slug from filename rules or
 front matter `slug:`), so appending `.md` matches the HTML route.
 
-Root-level **`index.md`** / **`index.mdx`** (the blog list / hub page at `/{routeBasePath}/`) is written as **`{routeBasePath}.md`** in the build output (e.g. `releases.md`), matching the usual “strip trailing slash and add `.md`” behavior.
+Root-level **`index.md`** / **`index.mdx`** (the blog list / hub page at
+`/{routeBasePath}/`) is written as **`{routeBasePath}.md`** in the build output
+(e.g. `releases.md`), matching the usual “strip trailing slash and add `.md`”
+behavior.
 
 Each entry:
 
@@ -141,7 +146,8 @@ Each entry:
 - **`routeBasePath`** — optional URL segment (same meaning as the blog plugin).
   Defaults to **`path`**; set only when the served route prefix differs from the
   source folder (unusual).
-- **`exclude`** — optional basenames or relative paths to skip (for example `archive.md`).
+- **`exclude`** — optional basenames or relative paths to skip (for example
+  `archive.md`).
 
 ### Fully-qualified links
 

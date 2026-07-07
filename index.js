@@ -569,7 +569,8 @@ function findMarkdownFiles(dir, fileList = [], baseDir = dir) {
 /*
  * --- Blog plugin URL scheme (@docusaurus/plugin-content-blog) ---
  * For docs content, emitted `.md` paths typically mirror each source file’s path
- * under docsDir (aligned with how @docusaurus/plugin-content-docs routes pages).
+ * under docsDir. Exception: `slug: /` in front matter (docs home page) maps to
+ * `index.md` or `{docsRouteBase}.md`, matching the HTML route instead of the filename.
  * Blog posts differ: the live URL is baseUrl + routeBasePath + slug, where slug is
  * optional front matter `slug:` or else derived from the filename (including
  * date-based filenames)—not necessarily the same as the file’s relative path on disk.
@@ -612,13 +613,15 @@ function parseSlugFromFrontmatter(content) {
     raw = raw.slice(1, -1).trim();
   }
   if (!raw) return undefined;
-  return raw.startsWith('/') ? raw : `/${raw}`;
+  return raw;
 }
 
 /** Resolves slug exactly like blog posts: front matter wins, else filename rules. */
 function resolveBlogPostSlug(blogSourceRelative, fileContent) {
   const fromFm = parseSlugFromFrontmatter(fileContent);
-  if (fromFm) return fromFm;
+  if (fromFm) {
+    return fromFm.startsWith('/') ? fromFm : `/${fromFm}`;
+  }
   const posixRel = blogSourceRelative.replace(/\\/g, '/');
   return parseBlogFileName(posixRel).slug;
 }
@@ -673,9 +676,10 @@ async function writeProcessedMarkdownToBuild({
   siteUrl,
   docsPrefix,
   extraLinkPrefixes = [],
+  fileContent,
 }) {
   await fs.ensureDir(path.dirname(destPath));
-  const content = await fs.readFile(sourcePath, 'utf8');
+  const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
   let cleanedContent = cleanMarkdownForDisplay(
     content,
     mdFileRelativeForCleaning,
@@ -833,12 +837,21 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
           destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
         }
 
-        const destPath = resolveSafeDestPath(buildDir, destFile);
+        const fileDir = path.posix.dirname(mdFile);
+        let pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
 
         try {
-          const fileDir = path.posix.dirname(mdFile);
-          const pageUrlDir =
-            fileDir === '.' ? '/' : '/' + fileDir + '/';
+          const raw = await fs.readFile(sourcePath, 'utf8');
+
+          // Docs home page: slug: / serves index.html, so emit index.md (not the filename)
+          if (parseSlugFromFrontmatter(raw) === '/') {
+            const docsRouteBase = docsPath.replace(/^\/+|\/+$/g, '');
+            destFile = docsRouteBase ? `${docsRouteBase}.md` : 'index.md';
+            pageUrlDir = docsRouteBase ? `/${docsRouteBase}/` : '/';
+          }
+
+          const destPath = resolveSafeDestPath(buildDir, destFile);
+
           await writeProcessedMarkdownToBuild({
             sourcePath,
             mdFileRelativeForCleaning: mdFile,
@@ -850,6 +863,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
             siteUrl,
             docsPrefix,
             extraLinkPrefixes: blogLinkPrefixes,
+            fileContent: raw,
           });
           copiedCount++;
 
@@ -950,6 +964,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
               siteUrl,
               docsPrefix,
               extraLinkPrefixes: blogLinkPrefixes,
+              fileContent: raw,
             });
             blogCopied++;
             copiedCount++;

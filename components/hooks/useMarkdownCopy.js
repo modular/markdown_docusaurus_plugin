@@ -30,7 +30,8 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
   } else if (supportDirectoryIndex) {
     markdownUrl = `${currentPath}intro.md`;
   } else {
-    markdownUrl = `${currentPath.slice(0, -1)}.md`;
+    const trimmed = currentPath.slice(0, -1);
+    markdownUrl = trimmed ? `${trimmed}.md` : '/index.md';
   }
 
   /**
