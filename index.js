@@ -351,14 +351,9 @@ function processIncludeTemplate(includeContent, substitutions) {
 
 function convertInstallModularToMarkdown(content, pluginContext) {
   if (!pluginContext) return content;
-  const includePath = path.join(
-    pluginContext.siteDir,
-    pluginContext.docsDirName,
-    '_includes/install-modular.mdx'
-  );
-  if (!fs.existsSync(includePath)) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-modular'];
+  if (!includeTemplate) return content;
 
-  const includeTemplate = fs.readFileSync(includePath, 'utf8');
   return content.replace(/<InstallModular\s+([^>]*?)\/>/gi, (match) => {
     const folder = extractAttribute(match, 'folder') || 'example-project';
     const extraMatch = match.match(/extraLibraries=\{(\[[^\]]*\])\}/);
@@ -383,14 +378,9 @@ function convertInstallModularToMarkdown(content, pluginContext) {
 
 function convertInstallOpenAIToMarkdown(content, pluginContext) {
   if (!pluginContext) return content;
-  const includePath = path.join(
-    pluginContext.siteDir,
-    pluginContext.docsDirName,
-    '_includes/install-openai.mdx'
-  );
-  if (!fs.existsSync(includePath)) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-openai'];
+  if (!includeTemplate) return content;
 
-  const includeTemplate = fs.readFileSync(includePath, 'utf8');
   return content.replace(/<InstallOpenAI\s*\/>/gi, () =>
     processIncludeTemplate(includeTemplate, {})
   );
@@ -404,6 +394,7 @@ function unwrapMdxComponents(content) {
   const components = [
     'ModelSelector',
     'ModelDropdownTabs',
+    'InstallModular',
   ];
 
   for (const comp of components) {
@@ -996,7 +987,7 @@ function permalinkToDestMd(permalink, baseUrl, supportDirectoryIndex) {
   return supportDirectoryIndex ? `${p}/index.md` : `${p}.md`;
 }
 
-module.exports = function markdownSourcePlugin(context, options = {}) {
+function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
@@ -1073,9 +1064,19 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         }
       }
 
+      const includeTemplates = {};
+      const includesDir = path.join(context.siteDir, docsDirName, '_includes');
+      for (const [key, file] of [['install-modular', 'install-modular.mdx'], ['install-openai', 'install-openai.mdx']]) {
+        const p = path.join(includesDir, file);
+        if (fs.existsSync(p)) {
+          includeTemplates[key] = fs.readFileSync(p, 'utf8');
+        }
+      }
+
       const pluginContext = {
         siteDir: context.siteDir,
         docsDirName,
+        includeTemplates,
       };
 
       let copiedCount = 0;
@@ -1344,4 +1345,19 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       );
     },
   };
+}
+
+module.exports = markdownSourcePlugin;
+
+module.exports._internals = {
+  cleanMarkdownForDisplay,
+  protectFencedCodeBlocks,
+  restoreFencedCodeBlocks,
+  convertCodeBlockToMarkdown,
+  convertConditionalVersionDocsToMarkdown,
+  convertAdmonitionToMarkdown,
+  convertFigureToMarkdown,
+  convertInstallModularToMarkdown,
+  convertInstallOpenAIToMarkdown,
+  unwrapMdxComponents,
 };
