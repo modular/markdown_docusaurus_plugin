@@ -235,6 +235,31 @@ function convertRequirementsToMarkdown(content) {
   );
 }
 
+// Temporarily replace fenced code blocks so downstream regexes cannot corrupt them.
+// The step-9 JSX stripper matches /<[A-Z].../ and treats heredoc markers like
+// `<<EOF` as component tags (<EOF ...>) because `[A-Z]` matches the E in EOF.
+// It then deletes everything until the next self-closing JSX tag (e.g.
+// `<InstallOpenAI />`), leaving an unclosed ``` fence in the emitted .md file.
+function protectFencedCodeBlocks(content) {
+  const blocks = [];
+  const protectedContent = content.replace(
+    /(^|\n)(```[\s\S]*?\n```)/g,
+    (match, prefix, block) => {
+      const token = `\n__FENCE_${blocks.length}__\n`;
+      blocks.push(block);
+      return prefix + token;
+    }
+  );
+  return { content: protectedContent, blocks };
+}
+
+function restoreFencedCodeBlocks(content, blocks) {
+  blocks.forEach((block, index) => {
+    content = content.replace(`__FENCE_${index}__`, block.trim());
+  });
+  return content;
+}
+
 // Unwrap MDX components by removing their tags but preserving inner content
 function unwrapMdxComponents(content) {
   // List of MDX components to unwrap (keeps growing as we find more)
@@ -402,8 +427,15 @@ function cleanMarkdownForDisplay(
 
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
-  // This runs AFTER Tabs/details conversion to preserve their content
-  content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
+  // This runs AFTER Tabs/details conversion to preserve their content.
+  // Fenced code blocks are protected first so heredoc syntax is not corrupted.
+  const { content: protectedContent, blocks: fencedBlocks } =
+    protectFencedCodeBlocks(content);
+  content = protectedContent.replace(
+    /<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g,
+    ''
+  );
+  content = restoreFencedCodeBlocks(content, fencedBlocks);
 
   // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
