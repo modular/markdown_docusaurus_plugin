@@ -235,6 +235,166 @@ function convertRequirementsToMarkdown(content) {
   );
 }
 
+// Temporarily replace fenced code blocks so downstream regexes cannot corrupt them.
+// The step-9 JSX stripper matches /<[A-Z].../ and treats heredoc markers like
+// `<<EOF` as component tags (<EOF ...>) because `[A-Z]` matches the E in EOF.
+// It then deletes everything until the next self-closing JSX tag (e.g.
+// `<InstallOpenAI />`), leaving an unclosed ``` fence in the emitted .md file.
+function protectFencedCodeBlocks(content) {
+  const blocks = [];
+  const protectedContent = content.replace(
+    /(^|\n)(```[\s\S]*?\n```)/g,
+    (match, prefix, block) => {
+      const token = `__FENCE_${blocks.length}__`;
+      blocks.push(block);
+      return prefix + token;
+    }
+  );
+  return { content: protectedContent, blocks };
+}
+
+function restoreFencedCodeBlocks(content, blocks) {
+  return blocks.reduce(
+    (text, block, index) => text.replace(`__FENCE_${index}__`, () => block),
+    content
+  );
+}
+
+// Convert Docusaurus CodeBlock components to fenced code blocks
+function convertCodeBlockToMarkdown(content, substitutions = {}) {
+  content = content.replace(
+    /<CodeBlock\s+language="([^"]+)"(?:\s+title="([^"]*)")?\s*>\s*\{`([\s\S]*?)`\}\s*<\/CodeBlock>/g,
+    (match, language, title, code) => {
+      let cleanCode = code;
+      for (const [key, value] of Object.entries(substitutions)) {
+        cleanCode = cleanCode.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+      }
+      const opener = title
+        ? '```' + language + ' title="' + title + '"'
+        : '```' + language;
+      return opener + '\n' + cleanCode + '\n```';
+    }
+  );
+  return content.replace(
+    /<CodeBlock\s+language="([^"]+)"[^>]*>\s*\n?\s*([^<{][\s\S]*?)\s*<\/CodeBlock>/g,
+    (match, language, code) => '```' + language + '\n' + code.trim() + '\n```'
+  );
+}
+
+// Include both nightly and stable branches so agents see all install paths
+function convertConditionalVersionDocsToMarkdown(content) {
+  content = content.replace(
+    /<ConditionalVersionDocs\s+version="nightly">\s*([\s\S]*?)<\/ConditionalVersionDocs>/gi,
+    (match, inner) => '**Nightly:**\n\n' + inner.trim() + '\n\n'
+  );
+  return content.replace(
+    /<ConditionalVersionDocs\s+version="stable">\s*([\s\S]*?)<\/ConditionalVersionDocs>/gi,
+    (match, inner) => '**Stable:**\n\n' + inner.trim() + '\n\n'
+  );
+}
+
+function convertAdmonitionToMarkdown(content) {
+  return content.replace(
+    /<Admonition\s+type="([^"]+)">\s*([\s\S]*?)<\/Admonition>/g,
+    (match, type, inner) => {
+      const cleanInner = inner
+        .replace(/<p>/g, '')
+        .replace(/<\/p>/g, '\n')
+        .replace(/<b>([^<]*)<\/b>/g, '**$1**')
+        .replace(/<code>([^<]*)<\/code>/g, '`$1`')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+      const quoted = cleanInner
+        .split('\n')
+        .map((line, index) => {
+          if (index === 0) {
+            return line.length ? `> **${type}:** ${line}` : `> **${type}:**`;
+          }
+          return line.length ? `> ${line}` : '>';
+        })
+        .join('\n');
+      return quoted + '\n';
+    }
+  );
+}
+
+function convertFigureToMarkdown(content, fileDir, imgUrlBase) {
+  return content.replace(
+    /<figure>\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\}[^>]*alt="([^"]*)"[^>]*\/>\s*<figcaption>([\s\S]*?)<\/figcaption>\s*<\/figure>/g,
+    (match, imagePath, alt, caption) => {
+      const relativePath = imagePath.replace(/^\.\//, '');
+      const normalizedBase = imgUrlBase.endsWith('/') ? imgUrlBase : imgUrlBase + '/';
+      const imageUrl = normalizedBase + fileDir + relativePath;
+      const cleanCaption = caption.replace(/<\/?b>/g, '**').replace(/<\/?strong>/g, '**');
+      return '![' + alt + '](' + imageUrl + ')\n\n*' + cleanCaption + '*';
+    }
+  );
+}
+
+function extractIncludeComponentBody(includeContent) {
+  let body = includeContent.replace(/^import[\s\S]*?(?=^export default)/m, '');
+  const returnMatch = body.match(/return\s*\(\s*([\s\S]*)\s*\)\s*;\s*\}\s*$/);
+  return returnMatch ? returnMatch[1] : body;
+}
+
+function processIncludeTemplate(includeContent, substitutions) {
+  let body = extractIncludeComponentBody(includeContent);
+  body = body.replace(/const tooltipNightly[\s\S]*?;\s*/g, '');
+  body = body.replace(/const tooltipStable[\s\S]*?;\s*/g, '');
+  body = body.replace(/\(\{tooltipNightly\}\)/g, '(nightly)');
+  body = body.replace(/\(\{tooltipStable\}\)/g, '(stable)');
+  body = body.replace(/<Tooltip[\s\S]*?\/>/g, '');
+  for (const [key, value] of Object.entries(substitutions)) {
+    body = body.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+  }
+  body = convertConditionalVersionDocsToMarkdown(body);
+  body = convertCodeBlockToMarkdown(body, substitutions);
+  body = convertAdmonitionToMarkdown(body);
+  body = body.replace(/<Link to="([^"]+)">([\s\S]*?)<\/Link>/g, '[$2]($1)');
+  body = body.replace(/<a\s+href="([^"]+)"><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
+  body = removeDivTags(body);
+  body = convertTabsToMarkdown(body);
+  body = body.replace(/<[^>]+>/g, '');
+  return body.trim();
+}
+
+function convertInstallModularToMarkdown(content, pluginContext) {
+  if (!pluginContext) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-modular'];
+  if (!includeTemplate) return content;
+
+  return content.replace(/<InstallModular\s+([^>]*?)\/>/gi, (match) => {
+    const folder = extractAttribute(match, 'folder') || 'example-project';
+    const extraMatch = match.match(/extraLibraries=\{(\[[^\]]*\])\}/);
+    let extraLibs = [];
+    if (extraMatch) {
+      try {
+        extraLibs = JSON.parse(extraMatch[1].replace(/'/g, '"'));
+      } catch (error) {
+        extraLibs = [];
+      }
+    }
+    const extraLibsString = extraLibs.length > 0 ? ' ' + extraLibs.join(' ') : '';
+    const extraLibsDescription =
+      extraLibs.length > 0 ? ' and other required packages' : '';
+    return processIncludeTemplate(includeTemplate, {
+      folder,
+      extraLibsString,
+      extraLibsDescription,
+    });
+  });
+}
+
+function convertInstallOpenAIToMarkdown(content, pluginContext) {
+  if (!pluginContext) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-openai'];
+  if (!includeTemplate) return content;
+
+  return content.replace(/<InstallOpenAI\s*\/>/gi, () =>
+    processIncludeTemplate(includeTemplate, {})
+  );
+}
+
 // Unwrap MDX components by removing their tags but preserving inner content
 function unwrapMdxComponents(content) {
   // List of MDX components to unwrap (keeps growing as we find more)
@@ -243,7 +403,7 @@ function unwrapMdxComponents(content) {
   const components = [
     'ModelSelector',
     'ModelDropdownTabs',
-    'InstallModular'
+    'InstallModular',
   ];
 
   for (const comp of components) {
@@ -315,7 +475,8 @@ function cleanMarkdownForDisplay(
   content,
   filepath,
   docsPath = '/docs/',
-  assetBasePath = undefined
+  assetBasePath = undefined,
+  pluginContext = undefined
 ) {
   const imgUrlBase =
     assetBasePath !== undefined ? assetBasePath : docsPath;
@@ -345,6 +506,13 @@ function cleanMarkdownForDisplay(
 
   // 6. Convert Requirements component to link
   content = convertRequirementsToMarkdown(content);
+
+  // Expand shared MDX includes into markdown (improves .md/HTML parity for agents)
+  content = convertInstallModularToMarkdown(content, pluginContext);
+  content = convertInstallOpenAIToMarkdown(content, pluginContext);
+  content = convertConditionalVersionDocsToMarkdown(content);
+  content = convertCodeBlockToMarkdown(content);
+  content = convertAdmonitionToMarkdown(content);
 
   // Convert Button components with DocLink to markdown links
   content = content.replace(
@@ -400,10 +568,20 @@ function cleanMarkdownForDisplay(
   // 8. Convert details/summary components to readable markdown (preserve content)
   content = convertDetailsToMarkdown(content);
 
+  // Convert figure blocks before stripping remaining JSX components
+  content = convertFigureToMarkdown(content, fileDir, imgUrlBase);
+
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
-  // This runs AFTER Tabs/details conversion to preserve their content
-  content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
+  // This runs AFTER Tabs/details conversion to preserve their content.
+  // Fenced code blocks are protected first so heredoc syntax is not corrupted.
+  const { content: protectedContent, blocks: fencedBlocks } =
+    protectFencedCodeBlocks(content);
+  content = protectedContent.replace(
+    /<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g,
+    ''
+  );
+  content = restoreFencedCodeBlocks(content, fencedBlocks);
 
   // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
@@ -677,6 +855,7 @@ async function writeProcessedMarkdownToBuild({
   docsPrefix,
   extraLinkPrefixes = [],
   fileContent,
+  pluginContext,
 }) {
   await fs.ensureDir(path.dirname(destPath));
   const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
@@ -684,7 +863,8 @@ async function writeProcessedMarkdownToBuild({
     content,
     mdFileRelativeForCleaning,
     docsPath,
-    assetBasePath
+    assetBasePath,
+    pluginContext
   );
   if (directive) {
     cleanedContent = directive + '\n\n' + cleanedContent;
@@ -747,7 +927,7 @@ async function copyImageDirectories(docsDir, buildDir) {
   return copiedCount;
 }
 
-module.exports = function markdownSourcePlugin(context, options = {}) {
+function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
@@ -817,6 +997,21 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         }
       }
 
+      const includeTemplates = {};
+      const includesDir = path.join(context.siteDir, docsDirName, '_includes');
+      for (const [key, file] of [['install-modular', 'install-modular.mdx'], ['install-openai', 'install-openai.mdx']]) {
+        const p = path.join(includesDir, file);
+        if (fs.existsSync(p)) {
+          includeTemplates[key] = fs.readFileSync(p, 'utf8');
+        }
+      }
+
+      const pluginContext = {
+        siteDir: context.siteDir,
+        docsDirName,
+        includeTemplates,
+      };
+
       console.log('[markdown-source-plugin] Copying markdown source files...');
 
       // Find all markdown files in docs directory
@@ -864,6 +1059,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
             docsPrefix,
             extraLinkPrefixes: blogLinkPrefixes,
             fileContent: raw,
+            pluginContext,
           });
           copiedCount++;
 
@@ -965,6 +1161,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
               docsPrefix,
               extraLinkPrefixes: blogLinkPrefixes,
               fileContent: raw,
+              pluginContext,
             });
             blogCopied++;
             copiedCount++;
@@ -992,4 +1189,19 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       );
     },
   };
+}
+
+module.exports = markdownSourcePlugin;
+
+module.exports._internals = {
+  cleanMarkdownForDisplay,
+  protectFencedCodeBlocks,
+  restoreFencedCodeBlocks,
+  convertCodeBlockToMarkdown,
+  convertConditionalVersionDocsToMarkdown,
+  convertAdmonitionToMarkdown,
+  convertFigureToMarkdown,
+  convertInstallModularToMarkdown,
+  convertInstallOpenAIToMarkdown,
+  unwrapMdxComponents,
 };
