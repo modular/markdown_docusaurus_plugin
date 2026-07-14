@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-14
+
+### Added
+
+- **`includeAllDocVersions`** option (default **`false`**): when enabled, generate raw **`.md`** for **every** docs version (e.g. **`/docs/*.md`** and **`/nightly/docs/*.md`**) instead of only the single **`docsDir`** tree. Versions are auto-discovered from **`@docusaurus/plugin-content-docs`**, and each doc is emitted at the same URL Docusaurus serves its HTML from (its **`permalink`** + **`.md`**).
+- **`docsPluginId`** option (default **`'default'`**): selects which **`@docusaurus/plugin-content-docs`** instance to read when **`includeAllDocVersions`** is enabled.
+
+### Changed
+
+- In versioned mode, the emitted **`.md`** set is driven by each version's loaded docs, so **`exclude`**d, draft, and unlisted docs are omitted (the **`.md`** set matches the HTML set). Behavior is unchanged when **`includeAllDocVersions`** is **`false`**.
+- **`copyImageDirectories`** accepts an optional output prefix so versioned image directories land under the correct subtree (e.g. **`/nightly/…/img/`**).
+
 ## [2.0.5] - 2026-07-06
 
 ### Fixed

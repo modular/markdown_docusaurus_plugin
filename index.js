@@ -701,8 +701,10 @@ async function writeProcessedMarkdownToBuild({
   await fs.writeFile(destPath, cleanedContent, 'utf8');
 }
 
-// Copy image directories from docs to build
-async function copyImageDirectories(docsDir, buildDir) {
+// Copy image directories from docs to build.
+// `destPrefix` (e.g. a version URL prefix like 'nightly') is prepended to the
+// output path so versioned docs land under the right subtree.
+async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
   const imageDirs = [];
 
   // Recursively find all 'img' directories in docs
@@ -732,7 +734,7 @@ async function copyImageDirectories(docsDir, buildDir) {
   // Copy each img directory to build
   let copiedCount = 0;
   for (const { source, relativePath } of imageDirs) {
-    const destination = path.join(buildDir, relativePath, 'img');
+    const destination = path.join(buildDir, destPrefix, relativePath, 'img');
 
     try {
       await fs.copy(source, destination);
@@ -745,6 +747,58 @@ async function copyImageDirectories(docsDir, buildDir) {
   }
 
   return copiedCount;
+}
+
+// Find a @docusaurus/plugin-content-docs instance's loaded versions from the
+// `plugins` array passed to postBuild. Every entry in that array carries its
+// plugin's loaded `.content`. Returns null if the plugin/content isn't found.
+function getLoadedDocVersions(plugins, docsPluginId) {
+  if (!Array.isArray(plugins)) return null;
+  // The docs plugin's `name` may appear scoped (`@docusaurus/plugin-content-docs`)
+  // or unscoped (`docusaurus-plugin-content-docs`) depending on the Docusaurus
+  // version, so match either form.
+  const isDocsPlugin = (name) =>
+    name === '@docusaurus/plugin-content-docs' ||
+    name === 'docusaurus-plugin-content-docs';
+  const docsPlugin = plugins.find(
+    (p) =>
+      p &&
+      isDocsPlugin(p.name) &&
+      ((p.options && p.options.id) || 'default') === docsPluginId
+  );
+  const versions =
+    docsPlugin && docsPlugin.content && docsPlugin.content.loadedVersions;
+  return Array.isArray(versions) ? versions : null;
+}
+
+// The URL path prefix for a docs version, with baseUrl stripped and no
+// surrounding slashes. E.g. '' for the latest/root version, 'nightly' for the
+// current version served at /nightly/.
+function versionUrlPrefix(version, baseUrl) {
+  const base = (baseUrl || '/').replace(/\/+$/, '');
+  let vpath = version.path || '/';
+  if (base && (vpath === base || vpath.startsWith(base + '/'))) {
+    vpath = vpath.slice(base.length);
+  }
+  return vpath.replace(/^\/+|\/+$/g, '');
+}
+
+// Convert a doc permalink (the page URL, already including baseUrl + version
+// prefix) into the build-relative `.md` output path, mirroring the plugin's
+// "append .md to the URL" scheme. `permalink` is the single source of truth for
+// routing, so version prefixes, slugs, and `slug: /` home pages all fall out of
+// it automatically.
+function permalinkToDestMd(permalink, baseUrl, supportDirectoryIndex) {
+  const base = (baseUrl || '/').replace(/\/+$/, '');
+  let p = permalink || '/';
+  if (base && (p === base || p.startsWith(base + '/'))) {
+    p = p.slice(base.length);
+  }
+  p = p.replace(/^\/+|\/+$/g, '');
+  if (p === '') {
+    return 'index.md';
+  }
+  return supportDirectoryIndex ? `${p}/index.md` : `${p}.md`;
 }
 
 module.exports = function markdownSourcePlugin(context, options = {}) {
@@ -768,6 +822,13 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
    * @type {{ path: string; routeBasePath?: string; exclude?: string[] }[]}
    */
   const blog = options.blog || [];
+  // When true, emit `.md` for every docs version (auto-discovered from
+  // @docusaurus/plugin-content-docs) instead of only the single `docsDir` tree.
+  // Off by default, so unversioned sites are unaffected.
+  const includeAllDocVersions = options.includeAllDocVersions || false;
+  // Which @docusaurus/plugin-content-docs instance to read when
+  // includeAllDocVersions is enabled (matches the plugin's `id`).
+  const docsPluginId = options.docsPluginId || 'default';
 
   return {
     name: 'markdown-source-plugin',
@@ -796,9 +857,9 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       };
     },
 
-    async postBuild({ outDir }) {
-      const docsDir = path.join(context.siteDir, docsDirName);
+    async postBuild({ outDir, plugins }) {
       const buildDir = outDir;
+      const baseUrl = (context.siteConfig && context.siteConfig.baseUrl) || '/';
       const siteUrl = fullyQualifiedLinks
         ? (options.siteUrl || (context.siteConfig.url + (context.siteConfig.baseUrl || '/'))).replace(/\/$/, '')
         : '';
@@ -817,71 +878,158 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         }
       }
 
-      console.log('[markdown-source-plugin] Copying markdown source files...');
-
-      // Find all markdown files in docs directory
-      const mdFiles = findMarkdownFiles(docsDir);
-
       let copiedCount = 0;
+      let imgDirCount = 0;
 
-      // Process each markdown file to build directory
-      for (const mdFile of mdFiles) {
-        const sourcePath = path.join(docsDir, mdFile);
-        // Convert .mdx to .md for the destination (URLs use .md extension)
-        let destFile = mdFile.replace(/\.mdx$/, '.md');
+      const loadedVersions = includeAllDocVersions
+        ? getLoadedDocVersions(plugins, docsPluginId)
+        : null;
 
-        // When supportDirectoryIndex is off, rewrite index.md to parent path
-        // so trailing-slash URLs resolve correctly (e.g., /foo/ -> /foo.md)
-        if (!supportDirectoryIndex && path.basename(destFile) === 'index.md') {
-          const parentDir = path.dirname(destFile);
-          destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
-        }
+      if (includeAllDocVersions && loadedVersions) {
+        // Versioned mode: emit .md for every docs version, driven by each
+        // version's loaded docs + permalinks (so URL prefixes, slugs, and
+        // exclude/draft filtering all match what Docusaurus actually serves).
+        console.log(
+          `[markdown-source-plugin] Copying markdown for ${loadedVersions.length} doc version(s)...`
+        );
 
-        const fileDir = path.posix.dirname(mdFile);
-        let pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
+        for (const version of loadedVersions) {
+          const prefix = versionUrlPrefix(version, baseUrl);
+          const contentPath = version.contentPath;
+          const assetBasePath = '/' + (prefix ? `${prefix}/` : '');
+          let versionCount = 0;
 
-        try {
-          const raw = await fs.readFile(sourcePath, 'utf8');
+          for (const doc of version.docs || []) {
+            try {
+              // doc.source is an aliased "@site/..." path; resolve it back to a
+              // real file and to a path relative to this version's contentPath.
+              const absSource = path.resolve(
+                context.siteDir,
+                String(doc.source).replace(/^@site\//, '')
+              );
+              const sourceRel = path
+                .relative(contentPath, absSource)
+                .split(path.sep)
+                .join('/');
+              const sourcePath = path.join(contentPath, sourceRel);
 
-          // Docs home page: slug: / serves index.html, so emit index.md (not the filename)
-          if (parseSlugFromFrontmatter(raw) === '/') {
-            const docsRouteBase = docsPath.replace(/^\/+|\/+$/g, '');
-            destFile = docsRouteBase ? `${docsRouteBase}.md` : 'index.md';
-            pageUrlDir = docsRouteBase ? `/${docsRouteBase}/` : '/';
+              const destFile = permalinkToDestMd(
+                doc.permalink,
+                baseUrl,
+                supportDirectoryIndex
+              );
+              const destPath = resolveSafeDestPath(buildDir, destFile);
+
+              // pageUrlDir mirrors the source file's directory in URL space
+              // (authoring semantics for relative links), prefixed per version.
+              const srcDir = path.posix.dirname(sourceRel);
+              const pageUrlDir = (
+                '/' +
+                [prefix, srcDir === '.' ? '' : srcDir].filter(Boolean).join('/') +
+                '/'
+              ).replace(/\/{2,}/g, '/');
+
+              await writeProcessedMarkdownToBuild({
+                sourcePath,
+                mdFileRelativeForCleaning: sourceRel,
+                destPath,
+                pageUrlDir,
+                docsPath,
+                assetBasePath,
+                directive,
+                fullyQualifiedLinks,
+                siteUrl,
+                docsPrefix,
+                extraLinkPrefixes: blogLinkPrefixes,
+              });
+              copiedCount++;
+              versionCount++;
+            } catch (error) {
+              console.error(
+                `  ✗ Failed to process ${doc && doc.permalink} (version ${version.versionName}):`,
+                error.message
+              );
+            }
           }
 
-          const destPath = resolveSafeDestPath(buildDir, destFile);
+          console.log(
+            `[markdown-source-plugin] Version "${version.versionName}"${prefix ? ` (/${prefix}/)` : ' (root)'}: ${versionCount} markdown file(s)`
+          );
 
-          await writeProcessedMarkdownToBuild({
-            sourcePath,
-            mdFileRelativeForCleaning: mdFile,
-            destPath,
-            pageUrlDir,
-            docsPath,
-            directive,
-            fullyQualifiedLinks,
-            siteUrl,
-            docsPrefix,
-            extraLinkPrefixes: blogLinkPrefixes,
-            fileContent: raw,
-          });
-          copiedCount++;
-
-          console.log(`  ✓ Processed: ${mdFile} -> ${destFile}`);
-        } catch (error) {
-          console.error(`  ✗ Failed to process ${mdFile}:`, error.message);
+          imgDirCount += await copyImageDirectories(contentPath, buildDir, prefix);
         }
+      } else {
+        if (includeAllDocVersions) {
+          console.warn(
+            '[markdown-source-plugin] includeAllDocVersions: could not find loaded ' +
+              `docs plugin content (id "${docsPluginId}"); falling back to single docsDir.`
+          );
+        }
+
+        const docsDir = path.join(context.siteDir, docsDirName);
+        console.log('[markdown-source-plugin] Copying markdown source files...');
+
+        // Find all markdown files in docs directory
+        const mdFiles = findMarkdownFiles(docsDir);
+
+        // Process each markdown file to build directory
+        for (const mdFile of mdFiles) {
+          const sourcePath = path.join(docsDir, mdFile);
+          // Convert .mdx to .md for the destination (URLs use .md extension)
+          let destFile = mdFile.replace(/\.mdx$/, '.md');
+
+          // When supportDirectoryIndex is off, rewrite index.md to parent path
+          // so trailing-slash URLs resolve correctly (e.g., /foo/ -> /foo.md)
+          if (!supportDirectoryIndex && path.basename(destFile) === 'index.md') {
+            const parentDir = path.dirname(destFile);
+            destFile = parentDir === '.' ? 'index.md' : parentDir + '.md';
+          }
+
+          const fileDir = path.posix.dirname(mdFile);
+          let pageUrlDir = fileDir === '.' ? '/' : '/' + fileDir + '/';
+
+          try {
+            const raw = await fs.readFile(sourcePath, 'utf8');
+
+            // Docs home page: slug: / serves index.html, so emit index.md (not the filename)
+            if (parseSlugFromFrontmatter(raw) === '/') {
+              const docsRouteBase = docsPath.replace(/^\/+|\/+$/g, '');
+              destFile = docsRouteBase ? `${docsRouteBase}.md` : 'index.md';
+              pageUrlDir = docsRouteBase ? `/${docsRouteBase}/` : '/';
+            }
+
+            const destPath = resolveSafeDestPath(buildDir, destFile);
+
+            await writeProcessedMarkdownToBuild({
+              sourcePath,
+              mdFileRelativeForCleaning: mdFile,
+              destPath,
+              pageUrlDir,
+              docsPath,
+              directive,
+              fullyQualifiedLinks,
+              siteUrl,
+              docsPrefix,
+              extraLinkPrefixes: blogLinkPrefixes,
+              fileContent: raw,
+            });
+            copiedCount++;
+
+            console.log(`  ✓ Processed: ${mdFile} -> ${destFile}`);
+          } catch (error) {
+            console.error(`  ✗ Failed to process ${mdFile}:`, error.message);
+          }
+        }
+
+        console.log(
+          `[markdown-source-plugin] Docs: ${copiedCount} markdown file(s)`
+        );
+
+        // Copy image directories from docs
+        console.log('[markdown-source-plugin] Copying image directories...');
+        imgDirCount += await copyImageDirectories(docsDir, buildDir);
+        console.log(`[markdown-source-plugin] Successfully copied ${imgDirCount} image directories`);
       }
-
-      const docsMdCount = copiedCount;
-      console.log(
-        `[markdown-source-plugin] Docs: ${docsMdCount} markdown file(s)`
-      );
-
-      // Copy image directories from docs
-      console.log('[markdown-source-plugin] Copying image directories...');
-      let imgDirCount = await copyImageDirectories(docsDir, buildDir);
-      console.log(`[markdown-source-plugin] Successfully copied ${imgDirCount} image directories`);
 
       // Blog instances: emit .md files under routeBasePath using plugin-content-blog slug URLs.
       for (const root of blog) {
