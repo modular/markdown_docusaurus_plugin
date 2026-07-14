@@ -68,6 +68,13 @@ test('preserves heredoc syntax inside fenced blocks', () => {
   assert(restored.includes('<<EOF'), 'heredoc should be restored');
 });
 
+test('protect/restore round-trip is lossless (no extra blank lines)', () => {
+  const input = 'before\n```python\nprint("hi")\n```\nafter';
+  const { content, blocks } = protectFencedCodeBlocks(input);
+  const restored = restoreFencedCodeBlocks(content, blocks);
+  assert.strictEqual(restored, input);
+});
+
 // ---------------------------------------------------------------------------
 // End-to-end: JSX stripper must not corrupt heredoc inside fenced blocks
 // ---------------------------------------------------------------------------
@@ -214,6 +221,15 @@ test('converts HTML within Admonition content', () => {
   assert(result.includes('`rm`'));
   assert(!result.includes('<p>'));
   assert(!result.includes('<b>'));
+});
+
+test('blockquotes every line of multi-line Admonition content', () => {
+  const input = '<Admonition type="tip">\nLine one\nLine two\n</Admonition>';
+  const result = convertAdmonitionToMarkdown(input);
+  assert.strictEqual(
+    result,
+    '> **tip:** Line one\n> Line two\n'
+  );
 });
 
 test('leaves non-Admonition content unchanged', () => {
