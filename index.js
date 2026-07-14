@@ -245,7 +245,7 @@ function protectFencedCodeBlocks(content) {
   const protectedContent = content.replace(
     /(^|\n)(```[\s\S]*?\n```)/g,
     (match, prefix, block) => {
-      const token = `\n__FENCE_${blocks.length}__\n`;
+      const token = `__FENCE_${blocks.length}__`;
       blocks.push(block);
       return prefix + token;
     }
@@ -254,10 +254,10 @@ function protectFencedCodeBlocks(content) {
 }
 
 function restoreFencedCodeBlocks(content, blocks) {
-  blocks.forEach((block, index) => {
-    content = content.replace(`__FENCE_${index}__`, block.trim());
-  });
-  return content;
+  return blocks.reduce(
+    (text, block, index) => text.replace(`__FENCE_${index}__`, () => block),
+    content
+  );
 }
 
 // Convert Docusaurus CodeBlock components to fenced code blocks
@@ -304,7 +304,16 @@ function convertAdmonitionToMarkdown(content) {
         .replace(/<code>([^<]*)<\/code>/g, '`$1`')
         .replace(/<[^>]+>/g, '')
         .trim();
-      return '> **' + type + ':** ' + cleanInner + '\n';
+      const quoted = cleanInner
+        .split('\n')
+        .map((line, index) => {
+          if (index === 0) {
+            return line.length ? `> **${type}:** ${line}` : `> **${type}:**`;
+          }
+          return line.length ? `> ${line}` : '>';
+        })
+        .join('\n');
+      return quoted + '\n';
     }
   );
 }
