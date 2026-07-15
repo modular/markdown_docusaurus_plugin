@@ -72,6 +72,16 @@ module.exports = {
       // relative to the site root (default: 'docs')
       docsDir: 'docs',
 
+      // When true, generate .md for EVERY docs version (e.g. /docs/*.md and
+      // /nightly/docs/*.md), auto-discovered from @docusaurus/plugin-content-docs.
+      // When false, only the single `docsDir` tree is emitted. (default: false)
+      includeAllDocVersions: false,
+
+      // Which @docusaurus/plugin-content-docs instance to read when
+      // includeAllDocVersions is enabled, matching that plugin's `id`.
+      // (default: 'default')
+      docsPluginId: 'default',
+
       // Blog content (@docusaurus/plugin-content-blog): emit `.md` URLs that match
       // blog permalinks (routeBasePath + slug), not plain filesystem mirroring.
       blog: [
@@ -125,6 +135,44 @@ module.exports = {
   ],
 };
 ```
+
+### `includeAllDocVersions` — emit `.md` for every docs version
+
+By default the plugin only mirrors the single `docsDir` tree, so on a
+[versioned](https://docusaurus.io/docs/versioning) site the raw `.md` files are
+generated for just one version. On a site where the latest stable docs are
+served at the canonical path (e.g. `/docs/`) and the in-development docs at a
+prefixed path (e.g. `/nightly/docs/`), this means:
+
+- `/nightly/docs/*.md` is missing entirely, and
+- the canonical `/docs/*.md` is generated from the wrong source tree.
+
+Set `includeAllDocVersions: true` to instead generate `.md` for **all** doc
+versions. The plugin reads the loaded versions from
+`@docusaurus/plugin-content-docs` at build time and, for each version, emits
+`.md` at the same URL Docusaurus serves the HTML from (its `permalink` + `.md`).
+Because output is driven by each version's loaded docs, `exclude`d, draft, and
+unlisted docs are automatically omitted — the `.md` set matches the HTML set.
+
+```javascript
+['docusaurus-markdown-source-plugin', {
+  docsPath: '/',
+  includeAllDocVersions: true,
+  // docsPluginId: 'default', // only needed for a non-default docs instance
+}]
+```
+
+Use `docsPluginId` when the docs you want to mirror come from a named
+`@docusaurus/plugin-content-docs` instance (the plugin ignores every other docs
+instance, e.g. a separate design-system docs plugin).
+
+If the docs plugin content can't be found at build time (misconfigured id, or
+the docs plugin isn't present), the plugin logs a warning and falls back to the
+legacy single-`docsDir` behavior.
+
+> Note: cross-version site-root-absolute links (e.g. a literal `/docs/foo`
+> written in a `nightly` page) are not rewritten to point at their own version;
+> this matches the plugin's existing absolute-link handling.
 
 ### `blog` — match plugin-content-blog URLs
 
