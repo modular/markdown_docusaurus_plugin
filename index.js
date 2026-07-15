@@ -664,6 +664,17 @@ function resolveSafeDestPath(buildDir, destRelPosix) {
   return resolvedDest;
 }
 
+/** Throws if relPath contains `..` or is absolute (would escape its parent). */
+function assertSafeRelativePath(relPath, label) {
+  const parts = String(relPath)
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((p) => p !== '' && p !== '.');
+  if (path.isAbsolute(relPath) || parts.some((p) => p === '..')) {
+    throw new Error(`Unsafe relative path${label ? ` for ${label}` : ''}: ${relPath}`);
+  }
+}
+
 async function writeProcessedMarkdownToBuild({
   sourcePath,
   mdFileRelativeForCleaning,
@@ -734,7 +745,12 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
   // Copy each img directory to build
   let copiedCount = 0;
   for (const { source, relativePath } of imageDirs) {
-    const destination = path.join(buildDir, destPrefix, relativePath, 'img');
+    const destRel = path.posix.join(
+      String(destPrefix).replace(/\\/g, '/'),
+      relativePath.replace(/\\/g, '/'),
+      'img'
+    );
+    const destination = resolveSafeDestPath(buildDir, destRel);
 
     try {
       await fs.copy(source, destination);
@@ -911,6 +927,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
                 .relative(contentPath, absSource)
                 .split(path.sep)
                 .join('/');
+              assertSafeRelativePath(sourceRel, doc.permalink);
               const sourcePath = path.join(contentPath, sourceRel);
 
               const destFile = permalinkToDestMd(

@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - In versioned mode, the emitted **`.md`** set is driven by each version's loaded docs, so **`exclude`**d, draft, and unlisted docs are omitted (the **`.md`** set matches the HTML set). Behavior is unchanged when **`includeAllDocVersions`** is **`false`**.
 - **`copyImageDirectories`** accepts an optional output prefix so versioned image directories land under the correct subtree (e.g. **`/nightly/…/img/`**).
 
+### Fixed
+
+- Versioned image copy and doc source resolution reject **`..`** path segments (same safety model as **`resolveSafeDestPath`** for markdown outputs).
+
 ## [2.0.5] - 2026-07-06
 
 ### Fixed
