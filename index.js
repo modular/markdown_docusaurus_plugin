@@ -745,14 +745,13 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
   // Copy each img directory to build
   let copiedCount = 0;
   for (const { source, relativePath } of imageDirs) {
-    const destRel = path.posix.join(
-      String(destPrefix).replace(/\\/g, '/'),
-      relativePath.replace(/\\/g, '/'),
-      'img'
-    );
-    const destination = resolveSafeDestPath(buildDir, destRel);
-
     try {
+      const destRel = path.posix.join(
+        String(destPrefix).replace(/\\/g, '/'),
+        relativePath.replace(/\\/g, '/'),
+        'img'
+      );
+      const destination = resolveSafeDestPath(buildDir, destRel);
       await fs.copy(source, destination);
       const imageCount = fs.readdirSync(source).length;
       console.log(`  ✓ Copied: ${relativePath}/img/ (${imageCount} images)`);
