@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relative images such as **`../images/gpu/x.png`** now resolve. They are rewritten to absolute URLs and the files are copied into the build (under the version prefix in **`includeAllDocVersions`** mode). Previously only **`img/`** folders were handled, so other relative images returned 404.
 - **`<img src={require(...)}>`** tags (including multi-line ones) and **`<figure>`** wrappers are converted to markdown images. For light/dark image pairs (**`#light`**/**`#dark`** or **`className="dark"`**), only the light image is kept.
 - **`<Link to|href>`** elements become markdown links instead of being dropped with their text.
+- Shared **`_includes`** expand under the name the page imports them as (such as **`InstallMAX`**), not only **`InstallModular`**. Every page that imported the install include was missing its install steps.
+- Include templates render as Markdown numbered lists with their code blocks, tips, and links, instead of deeply indented JSX residue with **`{extraLibsDescription}`** and **`{' '}`** left in.
+- **`<DynamicCode>`** placeholders such as **`{text}`** are filled with the model that the page's **`<ModelSelector>`** selects by default, and the code keeps its list indentation and title.
+- Nested **`<Tabs>`** convert innermost first and keep the indentation of the list item they sit in, so their code fences stay balanced.
+- **`<Admonition>`** paragraphs are joined onto one line and keep the element's indentation.
 
 ## [2.1.0] - 2026-07-14
 

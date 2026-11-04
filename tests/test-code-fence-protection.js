@@ -240,13 +240,11 @@ test('converts HTML within Admonition content', () => {
   assert(!result.includes('<b>'));
 });
 
-test('blockquotes every line of multi-line Admonition content', () => {
-  const input = '<Admonition type="tip">\nLine one\nLine two\n</Admonition>';
+test('blockquotes multi-paragraph Admonition content', () => {
+  const input =
+    '<Admonition type="tip">\n<p>Line one\nwraps</p>\n<p>Line two</p>\n</Admonition>';
   const result = convertAdmonitionToMarkdown(input);
-  assert.strictEqual(
-    result,
-    '> **tip:** Line one\n> Line two\n'
-  );
+  assert.strictEqual(result, '> **tip:** Line one wraps\n>\n> Line two\n');
 });
 
 test('dedents indented JSX lines inside an Admonition', () => {
