@@ -49,6 +49,17 @@ test('drops #dark markdown images and strips #light', () => {
   assert.strictEqual(convertImagesToMarkdown(input), 'a\n![](../images/gpu/sm.png)\nb');
 });
 
+test('handles multi-line alt text with brackets in light/dark pairs', () => {
+  const alt = 'A ptr points to an OwnedPointer[Int] which\npoints to an Int.';
+  const input = `![${alt}](../images/p.png#light)\n![${alt}](../images/p-dark.png#dark)\nafter`;
+  assert.strictEqual(convertImagesToMarkdown(input), `![${alt}](../images/p.png)\nafter`);
+});
+
+test('converts links in figcaption and drops <cite>', () => {
+  const input = '<figcaption>Based on <cite><a\nhref="https://example.com/x">Guide</a></cite></figcaption>';
+  assert.strictEqual(convertImagesToMarkdown(input), '*Based on [Guide](https://example.com/x)*');
+});
+
 test('maps @site/static/ to the site root', () => {
   assert.strictEqual(
     convertImagesToMarkdown('<img src={require("@site/static/images/x.png").default} alt="X" />'),
@@ -87,6 +98,11 @@ test('adds the version prefix', () => {
   const { content, files } = resolveImagePaths('![](../images/gpu/sm.png)', ctx('nightly'));
   assert.strictEqual(content, '![](https://example.com/nightly/images/gpu/sm.png)');
   assert.strictEqual(files[0].destRel, 'nightly/images/gpu/sm.png');
+});
+
+test('resolves an image whose alt text contains brackets', () => {
+  const { content } = resolveImagePaths('![List[Int]\nlayout](../images/gpu/sm.png)', ctx());
+  assert.strictEqual(content, '![List[Int]\nlayout](https://example.com/images/gpu/sm.png)');
 });
 
 test('encodes spaces in file names', () => {

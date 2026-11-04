@@ -442,6 +442,9 @@ function convertFigureToMarkdown(content) {
   );
 }
 
+// Image alt text may contain one level of brackets, e.g. "OwnedPointer[Int]".
+const IMAGE_ALT = String.raw`(?:[^\[\]]|\[[^\[\]]*\])*`;
+
 // Convert remaining JSX/HTML image markup to markdown images, and keep only
 // the light variant of Docusaurus light/dark image pairs.
 // - <img src={require('./x.png').default} alt="..." /> (any attribute order,
@@ -463,13 +466,24 @@ function convertImagesToMarkdown(content) {
   content = content.replace(
     /<figcaption>([\s\S]*?)<\/figcaption>/g,
     (match, caption) =>
-      `*${caption.replace(/<\/?(?:b|strong)>/g, '**').replace(/\s*\n\s*/g, ' ').trim()}*`
+      `*${caption
+        .replace(/<\/?(?:b|strong)>/g, '**')
+        .replace(/<a\s+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/g, '[$2]($1)')
+        .replace(/<\/?(?:cite|em|i|span)\b[^>]*>/g, '')
+        .replace(/\s*\n\s*/g, ' ')
+        .trim()}*`
   );
   content = content.replace(/^[ \t]*<\/?figure>[ \t]*\n?/gm, '');
   // Drop dark-mode variants (a whole line when the image stands alone).
-  content = content.replace(/^[ \t]*!\[[^\]]*\]\([^)\s]*#dark\)[ \t]*\n?/gm, '');
-  content = content.replace(/!\[[^\]]*\]\([^)\s]*#dark\)/g, '');
-  content = content.replace(/(!\[[^\]]*\]\([^)\s#]*)#light\)/g, '$1)');
+  content = content.replace(
+    new RegExp(String.raw`^[ \t]*!\[${IMAGE_ALT}\]\([^)\s]*#dark\)[ \t]*\n?`, 'gm'),
+    ''
+  );
+  content = content.replace(new RegExp(String.raw`!\[${IMAGE_ALT}\]\([^)\s]*#dark\)`, 'g'), '');
+  content = content.replace(
+    new RegExp(String.raw`(!\[${IMAGE_ALT}\]\([^)\s#]*)#light\)`, 'g'),
+    '$1)'
+  );
   return content;
 }
 
@@ -1070,7 +1084,7 @@ function assertSafeRelativePath(relPath, label) {
 function resolveImagePaths(content, { sourceDir, contentRoot, urlPrefix, urlBase }) {
   const files = [];
   const rewritten = transformOutsideCode(content, (text) =>
-    text.replace(/(!\[[^\]]*\]\()([^)\s]+)\)/g, (match, open, href) => {
+    text.replace(new RegExp(String.raw`(!\[${IMAGE_ALT}\]\()([^)\s]+)\)`, 'g'), (match, open, href) => {
       if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href)) return match;
       const cut = href.search(/[?#]/);
       const pathPart = cut >= 0 ? href.slice(0, cut) : href;
