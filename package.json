@@ -3,6 +3,9 @@
   "version": "2.1.0",
   "description": "A lightweight Docusaurus plugin that exposes your markdown files as raw .md URLs, perfect for LLMs and documentation tools",
   "main": "index.js",
+  "scripts": {
+    "test": "node tests/test-code-fence-protection.js && node tests/test-code-safe-links.js"
+  },
   "keywords": [
     "docusaurus",
     "docusaurus-plugin",

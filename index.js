@@ -240,17 +240,43 @@ function convertRequirementsToMarkdown(content) {
 // `<<EOF` as component tags (<EOF ...>) because `[A-Z]` matches the E in EOF.
 // It then deletes everything until the next self-closing JSX tag (e.g.
 // `<InstallOpenAI />`), leaving an unclosed ``` fence in the emitted .md file.
+//
+// Fences are found line by line, following CommonMark: an opening fence is 3+
+// backticks or tildes (optionally indented, as inside list items), and the
+// block ends at the first line holding only a fence of the same character that
+// is at least as long. Unclosed fences are left alone. The whole block,
+// including its indentation, is replaced by a token, so the round trip is
+// lossless.
 function protectFencedCodeBlocks(content) {
   const blocks = [];
-  const protectedContent = content.replace(
-    /(^|\n)(```[\s\S]*?\n```)/g,
-    (match, prefix, block) => {
-      const token = `__FENCE_${blocks.length}__`;
-      blocks.push(block);
-      return prefix + token;
+  const lines = content.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = lines[i].match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+    // A backtick fence's info string cannot itself contain backticks.
+    if (open && !(open[1][0] === '`' && open[2].includes('`'))) {
+      const fenceChar = open[1][0];
+      const fenceLen = open[1].length;
+      let close = -1;
+      for (let j = i + 1; j < lines.length; j++) {
+        const m = lines[j].match(/^[ \t]*(`{3,}|~{3,})\s*$/);
+        if (m && m[1][0] === fenceChar && m[1].length >= fenceLen) {
+          close = j;
+          break;
+        }
+      }
+      if (close !== -1) {
+        out.push(`__FENCE_${blocks.length}__`);
+        blocks.push(lines.slice(i, close + 1).join('\n'));
+        i = close + 1;
+        continue;
+      }
     }
-  );
-  return { content: protectedContent, blocks };
+    out.push(lines[i]);
+    i++;
+  }
+  return { content: out.join('\n'), blocks };
 }
 
 function restoreFencedCodeBlocks(content, blocks) {
@@ -270,6 +296,42 @@ function evaluateTemplateLiteral(source, substitutions = {}) {
       ? String(substitutions[name])
       : match;
   });
+}
+
+// Temporarily replace inline code spans (`code`, ``co`de``) with tokens.
+// Run this after protectFencedCodeBlocks. A span opens with a run of N
+// backticks and closes at the next run of exactly N backticks; it may wrap
+// across lines but not across a blank line (paragraph break).
+function protectInlineCode(content) {
+  const spans = [];
+  const protectedContent = content.replace(
+    /(?<!`)(`+)(?!`)((?:[^\n]|\n(?![ \t]*\n))+?)(?<!`)\1(?!`)/g,
+    (match) => {
+      const token = `__CODE_${spans.length}__`;
+      spans.push(match);
+      return token;
+    }
+  );
+  return { content: protectedContent, spans };
+}
+
+function restoreInlineCode(content, spans) {
+  // A function replacement keeps `$&`, `$'`, and `$$` in code literal.
+  return spans.reduce(
+    (text, span, index) => text.replace(`__CODE_${index}__`, () => span),
+    content
+  );
+}
+
+// Apply `transform` to everything except fenced code blocks and inline code.
+// Use this for rewrites that must not touch code, such as link rewriting:
+// Mojo calls like `fn[params](args)` look exactly like markdown links.
+function transformOutsideCode(content, transform) {
+  const fenced = protectFencedCodeBlocks(content);
+  const inline = protectInlineCode(fenced.content);
+  let result = transform(inline.content);
+  result = restoreInlineCode(result, inline.spans);
+  return restoreFencedCodeBlocks(result, fenced.blocks);
 }
 
 // Convert Docusaurus CodeBlock components to fenced code blocks
@@ -755,49 +817,53 @@ function convertLinksToAbsoluteUrls(
   docsPrefix,
   extraPathPrefixes = []
 ) {
-  // Inline links: [text](url) — negative lookbehind excludes images.
-  // Note: links with titles [text](url "title") or nested parentheses in URLs
-  // are not supported and will be left as-is or may be corrupted. These patterns
-  // are extremely rare in documentation markdown.
-  content = content.replace(
-    /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
-    (match, text, href) => {
-      const resolved = resolveLink(
-        href.trim(),
-        pageUrlDir,
-        siteUrl,
-        docsPrefix,
-        extraPathPrefixes
-      );
-      return resolved ? `[${text}](${resolved})` : match;
+  // Never rewrite inside code: Mojo syntax such as
+  // `ctx.enqueue_function[kernel](grid_dim=2)` matches the inline-link pattern.
+  return transformOutsideCode(content, (content) => {
+    // Inline links: [text](url) — negative lookbehind excludes images.
+    // Note: links with titles [text](url "title") or nested parentheses in URLs
+    // are not supported and will be left as-is or may be corrupted. These patterns
+    // are extremely rare in documentation markdown.
+    content = content.replace(
+      /(?<!!)\[([^\]]*)\]\(([^)]*)\)/g,
+      (match, text, href) => {
+        const resolved = resolveLink(
+          href.trim(),
+          pageUrlDir,
+          siteUrl,
+          docsPrefix,
+          extraPathPrefixes
+        );
+        return resolved ? `[${text}](${resolved})` : match;
+      }
+    );
+
+    // Collect labels used by image references (![alt][label]) so we skip them
+    const imageRefLabels = new Set();
+    const imageRefPattern = /!\[[^\]]*\]\[([^\]]+)\]/g;
+    let imgMatch;
+    while ((imgMatch = imageRefPattern.exec(content)) !== null) {
+      imageRefLabels.add(imgMatch[1].toLowerCase());
     }
-  );
 
-  // Collect labels used by image references (![alt][label]) so we skip them
-  const imageRefLabels = new Set();
-  const imageRefPattern = /!\[[^\]]*\]\[([^\]]+)\]/g;
-  let imgMatch;
-  while ((imgMatch = imageRefPattern.exec(content)) !== null) {
-    imageRefLabels.add(imgMatch[1].toLowerCase());
-  }
+    // Reference-style link definitions: [ref]: url (skip image labels)
+    content = content.replace(
+      /^\[([^\]]+)\]:\s+(\S+)$/gm,
+      (match, ref, href) => {
+        if (imageRefLabels.has(ref.toLowerCase())) return match;
+        const resolved = resolveLink(
+          href.trim(),
+          pageUrlDir,
+          siteUrl,
+          docsPrefix,
+          extraPathPrefixes
+        );
+        return resolved ? `[${ref}]: ${resolved}` : match;
+      }
+    );
 
-  // Reference-style link definitions: [ref]: url (skip image labels)
-  content = content.replace(
-    /^\[([^\]]+)\]:\s+(\S+)$/gm,
-    (match, ref, href) => {
-      if (imageRefLabels.has(ref.toLowerCase())) return match;
-      const resolved = resolveLink(
-        href.trim(),
-        pageUrlDir,
-        siteUrl,
-        docsPrefix,
-        extraPathPrefixes
-      );
-      return resolved ? `[${ref}]: ${resolved}` : match;
-    }
-  );
-
-  return content;
+    return content;
+  });
 }
 
 // Recursively find all markdown files in a directory (both .md and .mdx)
@@ -1442,6 +1508,10 @@ module.exports._internals = {
   cleanMarkdownForDisplay,
   protectFencedCodeBlocks,
   restoreFencedCodeBlocks,
+  protectInlineCode,
+  restoreInlineCode,
+  transformOutsideCode,
+  convertLinksToAbsoluteUrls,
   convertCodeBlockToMarkdown,
   convertConditionalVersionDocsToMarkdown,
   convertAdmonitionToMarkdown,
