@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fenced code blocks are protected from the JSX-stripping step, so bash heredocs such as **`cat <<EOF`** no longer delete content up to the next component and leave an unclosed fence.
 - Link rewriting (**`fullyQualifiedLinks`**) no longer touches fenced or inline code. Mojo calls such as **`ctx.enqueue_function[kernel](grid_dim=2)`** were being rewritten into **`.md`** links.
 - Fenced code detection is now line-based: it recognizes indented fences (inside list items), **`~~~`** fences, and longer outer fences that contain shorter ones.
+- **`<details>`** blocks keep their indentation and blank lines. Collapsed code samples were emitted with every line trimmed, which made the code invalid.
 
 ## [2.1.0] - 2026-07-14
 
