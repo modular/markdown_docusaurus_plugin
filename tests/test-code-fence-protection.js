@@ -276,7 +276,8 @@ test('converts figure with require() image to markdown', () => {
   const input = '<figure>\n<img src={require(\'./img/diagram.png\').default} alt="Architecture" />\n<figcaption>System overview</figcaption>\n</figure>';
   const result = convertFigureToMarkdown(input, 'getting-started/', '/docs/');
   assert(result.includes('![Architecture]'));
-  assert(result.includes('/docs/getting-started/img/diagram.png'));
+  // The authored path is kept; postBuild (or the img/ rewrite) resolves it.
+  assert(result.includes('](./img/diagram.png)'));
   assert(result.includes('*System overview*'));
 });
 
@@ -286,10 +287,10 @@ test('converts bold in figcaption to markdown bold', () => {
   assert(result.includes('**Figure 1:**'));
 });
 
-test('resolves ./images/ figure paths against the doc directory', () => {
+test('keeps the authored ./images/ figure path for resolveImagePaths', () => {
   const input = '<figure>\n<img src={require(\'./images/out.png\').default} alt="Out" />\n<figcaption>Output</figcaption>\n</figure>';
-  const result = convertFigureToMarkdown(input, 'max/inference/', '/');
-  assert(result.includes('](/max/inference/images/out.png)'));
+  const result = convertFigureToMarkdown(input);
+  assert(result.includes('](./images/out.png)'));
 });
 
 test('maps @site/static figure paths to the site root', () => {

@@ -428,24 +428,49 @@ function convertAdmonitionToMarkdown(content) {
   );
 }
 
-function convertFigureToMarkdown(content, fileDir, imgUrlBase) {
+function convertFigureToMarkdown(content) {
+  // Emits the image path as authored (relative to the source file).
+  // resolveImagePaths() later turns it into a URL and copies the file.
   return content.replace(
     /<figure>\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\}[^>]*alt="([^"]*)"[^>]*\/>\s*<figcaption>([\s\S]*?)<\/figcaption>\s*<\/figure>/g,
     (match, imagePath, alt, caption) => {
-      // Relative paths resolve against the doc's directory, which works because
-      // copyImageDirectories copies the doc tree's `img/` and `images/` folders.
-      let imageUrl;
-      if (imagePath.startsWith('@site/static/')) {
-        imageUrl = imagePath.replace('@site/static/', '/');
-      } else {
-        const relativePath = imagePath.replace(/^\.\//, '');
-        const normalizedBase = imgUrlBase.endsWith('/') ? imgUrlBase : imgUrlBase + '/';
-        imageUrl = normalizedBase + fileDir + relativePath;
-      }
+      // Site-static paths are already URLs; resolveImagePaths() leaves them alone.
+      const imageUrl = imagePath.replace(/^@site\/static\//, '/');
       const cleanCaption = caption.replace(/<\/?b>/g, '**').replace(/<\/?strong>/g, '**');
       return '![' + alt + '](' + imageUrl + ')\n\n*' + cleanCaption + '*';
     }
   );
+}
+
+// Convert remaining JSX/HTML image markup to markdown images, and keep only
+// the light variant of Docusaurus light/dark image pairs.
+// - <img src={require('./x.png').default} alt="..." /> (any attribute order,
+//   possibly multi-line) and <img src="..." /> become ![alt](path).
+// - <img className="dark" ...> and ![](x.png#dark) are dropped; the #light
+//   fragment is removed.
+// - Bare <figure> wrappers are removed and <figcaption> becomes italic text.
+function convertImagesToMarkdown(content) {
+  content = content.replace(/<img\b([^>]*?)\/?>/g, (match, attrs) => {
+    const requireSrc = attrs.match(/src=\{\s*require\(\s*['"]([^'"]+)['"]\s*\)(?:\.default)?\s*\}/);
+    const plainSrc = attrs.match(/src=["']([^"']+)["']/);
+    const src = requireSrc ? requireSrc[1] : plainSrc ? plainSrc[1] : null;
+    if (!src) return match;
+    if (/className=["'][^"']*\bdark\b/.test(attrs)) return '';
+    const altMatch = attrs.match(/alt=["']([^"']*)["']/);
+    const alt = altMatch ? altMatch[1] : '';
+    return `![${alt}](${src.replace(/^@site\/static\//, '/')})`;
+  });
+  content = content.replace(
+    /<figcaption>([\s\S]*?)<\/figcaption>/g,
+    (match, caption) =>
+      `*${caption.replace(/<\/?(?:b|strong)>/g, '**').replace(/\s*\n\s*/g, ' ').trim()}*`
+  );
+  content = content.replace(/^[ \t]*<\/?figure>[ \t]*\n?/gm, '');
+  // Drop dark-mode variants (a whole line when the image stands alone).
+  content = content.replace(/^[ \t]*!\[[^\]]*\]\([^)\s]*#dark\)[ \t]*\n?/gm, '');
+  content = content.replace(/!\[[^\]]*\]\([^)\s]*#dark\)/g, '');
+  content = content.replace(/(!\[[^\]]*\]\([^)\s#]*)#light\)/g, '$1)');
+  return content;
 }
 
 function extractIncludeComponentBody(includeContent) {
@@ -741,8 +766,10 @@ function cleanMarkdownForDisplay(
   // 8. Convert details/summary components to readable markdown (preserve content)
   content = convertDetailsToMarkdown(content);
 
-  // Convert figure blocks before stripping remaining JSX components
-  content = convertFigureToMarkdown(content, fileDir, imgUrlBase);
+  // Convert figure blocks and image tags before stripping remaining JSX components
+  content = transformOutsideCode(content, (text) =>
+    convertImagesToMarkdown(convertFigureToMarkdown(text))
+  );
 
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
@@ -1033,6 +1060,57 @@ function assertSafeRelativePath(relPath, label) {
   }
 }
 
+// Resolve relative markdown image paths (../images/x.png, ./images/x.png,
+// images/x.png) against the source file, and rewrite them to URLs where the
+// plugin will copy the files: the file's path relative to `contentRoot`,
+// under `urlPrefix` (for example the docs version prefix 'nightly').
+// Images in `img/` folders and site-absolute paths are left to the existing
+// handling. Paths that do not exist or that leave `contentRoot` are unchanged.
+// Returns the new content and the files to copy ({ source, destRel }).
+function resolveImagePaths(content, { sourceDir, contentRoot, urlPrefix, urlBase }) {
+  const files = [];
+  const rewritten = transformOutsideCode(content, (text) =>
+    text.replace(/(!\[[^\]]*\]\()([^)\s]+)\)/g, (match, open, href) => {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(href)) return match;
+      const cut = href.search(/[?#]/);
+      const pathPart = cut >= 0 ? href.slice(0, cut) : href;
+      const suffix = cut >= 0 ? href.slice(cut) : '';
+      let decoded = pathPart;
+      try {
+        decoded = decodeURI(pathPart);
+      } catch {
+        return match;
+      }
+      const absPath = path.resolve(sourceDir, decoded);
+      const rel = path.relative(contentRoot, absPath);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return match;
+      if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return match;
+      const relPosix = rel.split(path.sep).join('/');
+      const destRel = [urlPrefix, relPosix].filter(Boolean).join('/');
+      files.push({ source: absPath, destRel });
+      const base = String(urlBase || '').replace(/\/+$/, '');
+      return `${open}${base}/${encodeURI(destRel)}${suffix})`;
+    })
+  );
+  return { content: rewritten, files };
+}
+
+// Copy images collected by resolveImagePaths into the build. Existing build
+// files (for example from static/) are never overwritten.
+async function copyResolvedImages(files, buildDir, copiedImages) {
+  for (const { source, destRel } of files) {
+    if (copiedImages.has(destRel)) continue;
+    copiedImages.add(destRel);
+    try {
+      const dest = resolveSafeDestPath(buildDir, destRel);
+      if (await fs.pathExists(dest)) continue;
+      await fs.copy(source, dest);
+    } catch (error) {
+      console.error(`  ✗ Failed to copy image ${destRel}:`, error.message);
+    }
+  }
+}
+
 async function writeProcessedMarkdownToBuild({
   sourcePath,
   mdFileRelativeForCleaning,
@@ -1047,6 +1125,7 @@ async function writeProcessedMarkdownToBuild({
   extraLinkPrefixes = [],
   fileContent,
   pluginContext,
+  imageContext,
 }) {
   await fs.ensureDir(path.dirname(destPath));
   const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
@@ -1059,6 +1138,16 @@ async function writeProcessedMarkdownToBuild({
   );
   if (directive) {
     cleanedContent = directive + '\n\n' + cleanedContent;
+  }
+  if (imageContext) {
+    const { content: withImages, files } = resolveImagePaths(cleanedContent, {
+      sourceDir: path.dirname(sourcePath),
+      contentRoot: imageContext.contentRoot,
+      urlPrefix: imageContext.urlPrefix,
+      urlBase: imageContext.urlBase,
+    });
+    cleanedContent = withImages;
+    await copyResolvedImages(files, imageContext.buildDir, imageContext.copiedImages);
   }
   if (fullyQualifiedLinks) {
     cleanedContent = convertLinksToAbsoluteUrls(
@@ -1272,6 +1361,18 @@ function markdownSourcePlugin(context, options = {}) {
         includeTemplates,
       };
 
+      // Relative images are copied next to the emitted .md files and linked
+      // by absolute URL (fully qualified when fullyQualifiedLinks is on).
+      const imageUrlBase = fullyQualifiedLinks ? siteUrl : baseUrl.replace(/\/+$/, '');
+      const copiedImages = new Set();
+      const imageContextFor = (contentRoot, urlPrefix) => ({
+        contentRoot,
+        urlPrefix,
+        urlBase: imageUrlBase,
+        buildDir,
+        copiedImages,
+      });
+
       let copiedCount = 0;
       let imgDirCount = 0;
 
@@ -1337,6 +1438,7 @@ function markdownSourcePlugin(context, options = {}) {
                 docsPrefix,
                 extraLinkPrefixes: blogLinkPrefixes,
                 pluginContext,
+                imageContext: imageContextFor(contentPath, prefix),
               });
               copiedCount++;
               versionCount++;
@@ -1409,6 +1511,7 @@ function markdownSourcePlugin(context, options = {}) {
               extraLinkPrefixes: blogLinkPrefixes,
               fileContent: raw,
               pluginContext,
+              imageContext: imageContextFor(docsDir, docsPath.replace(/^\/+|\/+$/g, '')),
             });
             copiedCount++;
 
@@ -1511,6 +1614,7 @@ function markdownSourcePlugin(context, options = {}) {
               extraLinkPrefixes: blogLinkPrefixes,
               fileContent: raw,
               pluginContext,
+              imageContext: imageContextFor(blogDir, routeBasePath),
             });
             blogCopied++;
             copiedCount++;
@@ -1554,6 +1658,8 @@ module.exports._internals = {
   convertLinksToAbsoluteUrls,
   convertDetailsToMarkdown,
   stripHighlightDirectives,
+  convertImagesToMarkdown,
+  resolveImagePaths,
   convertCodeBlockToMarkdown,
   convertConditionalVersionDocsToMarkdown,
   convertAdmonitionToMarkdown,
