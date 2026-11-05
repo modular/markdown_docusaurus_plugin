@@ -312,6 +312,26 @@ function evaluateTemplateLiteral(source, substitutions = {}) {
   });
 }
 
+// Docusaurus "magic comments" that only control line highlighting in the HTML
+// code block (https://docusaurus.io/docs/markdown-features/code-blocks#highlighting-with-comments).
+// Docusaurus removes these lines when rendering, so the .md output must too:
+// a stray `# highlight-start` inside a backslash-continued shell command breaks
+// it when pasted. Covers the comment styles Docusaurus recognizes.
+const HIGHLIGHT_DIRECTIVE_LINE =
+  /^[ \t]*(?:\/\/|#|--|;;|%|\/\*|\{\/\*|<!--)[ \t]*highlight-(?:next-line|start|end)[ \t]*(?:\*\/\}?|-->)?[ \t]*\r?$/;
+
+// Remove highlight directive lines from fenced code blocks only.
+function stripHighlightDirectives(content) {
+  const { content: protectedContent, blocks } = protectFencedCodeBlocks(content);
+  const cleanedBlocks = blocks.map((block) =>
+    block
+      .split('\n')
+      .filter((line) => !HIGHLIGHT_DIRECTIVE_LINE.test(line))
+      .join('\n')
+  );
+  return restoreFencedCodeBlocks(protectedContent, cleanedBlocks);
+}
+
 // Temporarily replace inline code spans (`code`, ``co`de``) with tokens.
 // Run this after protectFencedCodeBlocks. A span opens with a run of N
 // backticks and closes at the next run of exactly N backticks; it may wrap
@@ -735,6 +755,9 @@ function cleanMarkdownForDisplay(
     ''
   );
   content = restoreFencedCodeBlocks(content, fencedBlocks);
+
+  // 9b. Remove Docusaurus highlight directives from code blocks
+  content = stripHighlightDirectives(content);
 
   // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
@@ -1530,6 +1553,7 @@ module.exports._internals = {
   transformOutsideCode,
   convertLinksToAbsoluteUrls,
   convertDetailsToMarkdown,
+  stripHighlightDirectives,
   convertCodeBlockToMarkdown,
   convertConditionalVersionDocsToMarkdown,
   convertAdmonitionToMarkdown,
