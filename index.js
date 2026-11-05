@@ -777,6 +777,49 @@ function convertDetailsToMarkdown(content) {
   });
 }
 
+// String attributes of a JSX tag: name="..." or name='...'. Quoted values may
+// contain `>` (a description with <code>), so tags are matched with this too.
+const JSX_STRING_ATTR = /([A-Za-z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+
+function parseJsxStringAttributes(attrText) {
+  const attrs = {};
+  for (const match of attrText.matchAll(JSX_STRING_ATTR)) {
+    attrs[match[1]] = match[2] ?? match[3];
+  }
+  return attrs;
+}
+
+function listingCardToMarkdown(attrs) {
+  const title = (attrs.title || '').trim();
+  const description = (attrs.description || '')
+    .replace(/<code>([\s\S]*?)<\/code>/g, '`$1`')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const label = title && attrs.url ? `[${title}](${attrs.url.trim()})` : title;
+  if (!label) return description ? `- ${description}` : '';
+  return description ? `- ${label}: ${description}` : `- ${label}`;
+}
+
+// Convert a <ListingCards> grid into a Markdown list with one
+// "- [title](url): description" item per <ListingCard />. The generic JSX
+// stripper can't remove the grid: its lazy match ends at the first card's `/>`,
+// which drops the cards and leaves a stray </ListingCards>.
+function convertListingCardsToMarkdown(content) {
+  const quotedOrPlain = `(?:"[^"]*"|'[^']*'|[^"'>])*`;
+  const cardPattern = new RegExp(`<ListingCard\\b(${quotedOrPlain}?)\\/>`, 'g');
+  return content.replace(
+    /^([ \t]*)<ListingCards\b[^>]*>([\s\S]*?)<\/ListingCards>/gm,
+    (match, indent, inner) => {
+      const items = [...inner.matchAll(cardPattern)]
+        .map((card) => listingCardToMarkdown(parseJsxStringAttributes(card[1])))
+        .filter(Boolean)
+        .map((item) => indent + item);
+      return `\n${items.join('\n')}\n`;
+    }
+  );
+}
+
 // Extract title from YAML frontmatter
 function extractTitleFromFrontmatter(content) {
   const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -910,6 +953,7 @@ function cleanMarkdownForDisplay(
   content = transformOutsideCode(content, (text) =>
     convertImagesToMarkdown(convertFigureToMarkdown(text))
   );
+  content = transformOutsideCode(content, convertListingCardsToMarkdown);
 
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
@@ -1846,6 +1890,7 @@ module.exports._internals = {
   transformOutsideCode,
   convertLinksToAbsoluteUrls,
   convertDetailsToMarkdown,
+  convertListingCardsToMarkdown,
   stripHighlightDirectives,
   convertImagesToMarkdown,
   resolveImagePaths,
