@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Self-closing **`<InstallModular />`** and **`<InstallOpenAI />`** components expand into Markdown from **`docs/_includes/install-modular.mdx`** and **`install-openai.mdx`** when those files exist, so the **`.md`** output carries the same install steps as the HTML page.
 - **`CodeBlock`**, **`ConditionalVersionDocs`** (both nightly and stable branches), **`Admonition`**, and **`<figure>`** blocks with **`require()`** images convert to Markdown instead of being stripped.
-- **`images/`** directories in the docs tree are copied to the build alongside **`img/`**, so converted figure URLs resolve.
 
 ### Fixed
 
@@ -20,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fenced code detection is now line-based: it recognizes indented fences (inside list items), **`~~~`** fences, and longer outer fences that contain shorter ones.
 - **`<details>`** blocks keep their indentation and blank lines. Collapsed code samples were emitted with every line trimmed, which made the code invalid.
 - Docusaurus highlight directives (**`# highlight-start`**, **`// highlight-next-line`**, and the other magic-comment styles) are removed from code blocks, as they are in the HTML. Left in, they broke backslash-continued shell commands.
+- Relative images such as **`../images/gpu/x.png`** now resolve. They are rewritten to absolute URLs and the files are copied into the build (under the version prefix in **`includeAllDocVersions`** mode). Previously only **`img/`** folders were handled, so other relative images returned 404.
+- **`<img src={require(...)}>`** tags (including multi-line ones) and **`<figure>`** wrappers are converted to markdown images. For light/dark image pairs (**`#light`**/**`#dark`** or **`className="dark"`**), only the light image is kept.
 
 ## [2.1.0] - 2026-07-14
 
