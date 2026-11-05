@@ -153,6 +153,22 @@ test('applies substitutions to CodeBlock content', () => {
   assert(result.includes('cd my-project'));
 });
 
+test('unescapes template-literal escapes in CodeBlock content', () => {
+  const input =
+    '<CodeBlock language="sh">{`pixi init ${folder} \\\\\n  -c conda-forge \\`x\\` \\${HOME}`}</CodeBlock>';
+  const result = convertCodeBlockToMarkdown(input, { folder: 'demo' });
+  assert.strictEqual(
+    result,
+    '```sh\npixi init demo \\\n  -c conda-forge `x` ${HOME}\n```'
+  );
+});
+
+test('leaves unknown ${...} expressions in CodeBlock content as written', () => {
+  const input = '<CodeBlock language="sh">{`echo ${unknown}`}</CodeBlock>';
+  const result = convertCodeBlockToMarkdown(input, {});
+  assert(result.includes('echo ${unknown}'));
+});
+
 test('converts CodeBlock with plain text content', () => {
   const input = '<CodeBlock language="text">\nHello world\n</CodeBlock>';
   const result = convertCodeBlockToMarkdown(input);
@@ -232,6 +248,19 @@ test('blockquotes every line of multi-line Admonition content', () => {
   );
 });
 
+test('dedents indented JSX lines inside an Admonition', () => {
+  const input =
+    '<Admonition type="note">\n        <p>\n          First line\n          second line\n        </p>\n      </Admonition>';
+  const result = convertAdmonitionToMarkdown(input);
+  assert.strictEqual(result, '> **note:** First line\n> second line\n');
+});
+
+test('does not double the label when the Admonition starts with its own', () => {
+  const input = '<Admonition type="tip"><p><b>Tip:</b> Do this.</p></Admonition>';
+  const result = convertAdmonitionToMarkdown(input);
+  assert.strictEqual(result, '> **Tip:** Do this.\n');
+});
+
 test('leaves non-Admonition content unchanged', () => {
   const input = 'plain text';
   assert.strictEqual(convertAdmonitionToMarkdown(input), input);
@@ -254,6 +283,18 @@ test('converts bold in figcaption to markdown bold', () => {
   const input = '<figure>\n<img src={require("./chart.png").default} alt="Chart" />\n<figcaption><b>Figure 1:</b> Results</figcaption>\n</figure>';
   const result = convertFigureToMarkdown(input, '', '/docs/');
   assert(result.includes('**Figure 1:**'));
+});
+
+test('resolves ./images/ figure paths against the doc directory', () => {
+  const input = '<figure>\n<img src={require(\'./images/out.png\').default} alt="Out" />\n<figcaption>Output</figcaption>\n</figure>';
+  const result = convertFigureToMarkdown(input, 'max/inference/', '/');
+  assert(result.includes('](/max/inference/images/out.png)'));
+});
+
+test('maps @site/static figure paths to the site root', () => {
+  const input = '<figure>\n<img src={require(\'@site/static/img/arch.png\').default} alt="Arch" />\n<figcaption>Arch</figcaption>\n</figure>';
+  const result = convertFigureToMarkdown(input, 'max/', '/docs/');
+  assert(result.includes('](/img/arch.png)'));
 });
 
 test('leaves non-matching figure HTML unchanged', () => {
@@ -285,7 +326,7 @@ test('expands self-closing InstallModular when template is available', () => {
     'export default function Install({ folder }) {',
     '  return (',
     '    <div>',
-    '    Install into ${folder}',
+    '    Install into {folder}',
     '    </div>',
     '  );',
     '}',
@@ -297,6 +338,114 @@ test('expands self-closing InstallModular when template is available', () => {
   assert(result.includes('my-project'), 'folder substitution should apply');
   assert(result.includes('Before'));
   assert(result.includes('After'));
+});
+
+test('expands InstallModular written without a space before />', () => {
+  const template = 'export default function Install() {\n  return (\n    <div>x</div>\n  );\n}';
+  const ctx = { includeTemplates: { 'install-modular': template } };
+  for (const input of ['<InstallModular/>', '<InstallModular folder="a"/>']) {
+    const result = convertInstallModularToMarkdown(input, ctx);
+    assert(!result.includes('<InstallModular'), `${input} should expand`);
+  }
+});
+
+// Mirrors the structure of the real docs/_includes/install-modular.mdx:
+// deep JSX indentation, a fragment, ordered lists with alternative
+// ConditionalVersionDocs items, `\\` line continuations, `{' '}`, and an
+// Admonition that contains a Link and its own bold label.
+const realisticTemplate = `import Tabs from '@theme/Tabs';
+import CodeBlock from '@theme/CodeBlock';
+
+export default function InstallModular({ folder = "example-project", extraLibraries = [] }) {
+  const extraLibsString = extraLibraries.length > 0 ? ' ' + extraLibraries.join(' ') : '';
+  const tooltipNightly = (<Tooltip
+    parent="nightly"
+    content="Change the version in the header."
+  />);
+  return (
+    <>
+      <Tabs groupId="install">
+        <TabItem value="pixi" label="pixi">
+          <ol>
+            <li>
+              Create a project:
+              <CodeBlock language="sh">
+                {\`pixi init \${folder} \\\\
+  -c conda-forge \\\\
+  && cd \${folder}\`}
+              </CodeBlock>
+
+              <Admonition type="tip">
+                <p>
+                  <b>Tip:</b>{' '}
+                  You can skip the <code>-c</code> options if you{' '}
+                  <Link to="/pixi#channels">
+                    add these channels as defaults
+                  </Link>.
+                </p>
+              </Admonition>
+            </li>
+
+            <ConditionalVersionDocs version="nightly">
+              <li>
+                Install <code>modular</code> ({tooltipNightly}){extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {\`pixi add modular\${extraLibsString}\`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+            <ConditionalVersionDocs version="stable">
+              <li>
+                Install <code>modular</code>{extraLibsDescription}:
+                <CodeBlock language="sh">
+                  {\`pixi add "modular==26.3"\${extraLibsString}\`}
+                </CodeBlock>
+              </li>
+            </ConditionalVersionDocs>
+
+            <li>
+              Start the virtual environment:
+              <CodeBlock language="sh">
+                {\`pixi shell\`}
+              </CodeBlock>
+            </li>
+          </ol>
+        </TabItem>
+      </Tabs>
+    </>
+  );
+}
+`;
+
+test('expands a realistic include into valid, unindented Markdown', () => {
+  const ctx = { includeTemplates: { 'install-modular': realisticTemplate } };
+  const input = '<InstallModular folder="demo" extraLibraries={["torch"]} />';
+  const result = convertInstallModularToMarkdown(input, ctx);
+
+  const indented = result.split('\n').filter((line) => /^ {4,}\S/.test(line));
+  assert.deepStrictEqual(indented, [], 'no line should read as an indented code block');
+
+  const fences = result.split('\n').filter((line) => line.startsWith('```'));
+  assert.strictEqual(fences.length % 2, 0, 'fences should pair up');
+  assert(fences.every((line) => !line.startsWith(' ')), 'fences start at column 0');
+
+  assert(
+    result.includes('```sh\npixi init demo \\\n  -c conda-forge \\\n  && cd demo\n```'),
+    'template literal escapes are evaluated and relative indentation kept'
+  );
+  assert(result.includes('pixi add modular torch'), 'extraLibsString substituted');
+  assert(result.includes('and other required packages'), '{extraLibsDescription} substituted');
+  assert(!/[{}]/.test(result.replace(/```[\s\S]*?```/g, '')), 'no JSX braces leak into prose');
+  assert(!result.includes('<'), 'no tags or fragments remain');
+  assert(
+    result.includes('> **Tip:**\n> You can skip the `-c` options'),
+    'single admonition label'
+  );
+  assert(result.includes('[add these channels as defaults](/pixi#channels)'), 'link kept');
+  assert(result.includes('1. Create a project:'), 'first item numbered');
+  assert(result.includes('2. Install `modular` (nightly)'), 'nightly item numbered');
+  assert(result.includes('2. Install `modular` and other'), 'stable alternative shares the number');
+  assert(result.includes('3. Start the virtual environment:'), 'numbering continues');
 });
 
 // ---------------------------------------------------------------------------

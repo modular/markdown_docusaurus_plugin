@@ -260,15 +260,24 @@ function restoreFencedCodeBlocks(content, blocks) {
   );
 }
 
+// Evaluate a JS template literal's source the way the browser would: unescape
+// `\\`, `\``, and `\$`, and interpolate `${name}` for known substitutions.
+// Unknown `${...}` expressions are left as written.
+function evaluateTemplateLiteral(source, substitutions = {}) {
+  return source.replace(/\\([\\`$])|\$\{(\w+)\}/g, (match, escaped, name) => {
+    if (escaped !== undefined) return escaped;
+    return Object.prototype.hasOwnProperty.call(substitutions, name)
+      ? String(substitutions[name])
+      : match;
+  });
+}
+
 // Convert Docusaurus CodeBlock components to fenced code blocks
 function convertCodeBlockToMarkdown(content, substitutions = {}) {
   content = content.replace(
     /<CodeBlock\s+language="([^"]+)"(?:\s+title="([^"]*)")?\s*>\s*\{`([\s\S]*?)`\}\s*<\/CodeBlock>/g,
     (match, language, title, code) => {
-      let cleanCode = code;
-      for (const [key, value] of Object.entries(substitutions)) {
-        cleanCode = cleanCode.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
-      }
+      const cleanCode = evaluateTemplateLiteral(code, substitutions);
       const opener = title
         ? '```' + language + ' title="' + title + '"'
         : '```' + language;
@@ -297,17 +306,26 @@ function convertAdmonitionToMarkdown(content) {
   return content.replace(
     /<Admonition\s+type="([^"]+)">\s*([\s\S]*?)<\/Admonition>/g,
     (match, type, inner) => {
+      // Admonition children are JSX, where indentation carries no meaning.
+      // Keeping it would turn deeply nested lines into indented code blocks.
       const cleanInner = inner
         .replace(/<p>/g, '')
         .replace(/<\/p>/g, '\n')
         .replace(/<b>([^<]*)<\/b>/g, '**$1**')
         .replace(/<code>([^<]*)<\/code>/g, '`$1`')
         .replace(/<[^>]+>/g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
         .trim();
+      // Authors often open with their own bold label (`<b>Tip:</b>`); don't
+      // prepend a second one.
+      const hasOwnLabel = /^\*\*[^*\n]+:\*\*/.test(cleanInner);
       const quoted = cleanInner
         .split('\n')
         .map((line, index) => {
-          if (index === 0) {
+          if (index === 0 && !hasOwnLabel) {
             return line.length ? `> **${type}:** ${line}` : `> **${type}:**`;
           }
           return line.length ? `> ${line}` : '>';
@@ -322,9 +340,16 @@ function convertFigureToMarkdown(content, fileDir, imgUrlBase) {
   return content.replace(
     /<figure>\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\}[^>]*alt="([^"]*)"[^>]*\/>\s*<figcaption>([\s\S]*?)<\/figcaption>\s*<\/figure>/g,
     (match, imagePath, alt, caption) => {
-      const relativePath = imagePath.replace(/^\.\//, '');
-      const normalizedBase = imgUrlBase.endsWith('/') ? imgUrlBase : imgUrlBase + '/';
-      const imageUrl = normalizedBase + fileDir + relativePath;
+      // Relative paths resolve against the doc's directory, which works because
+      // copyImageDirectories copies the doc tree's `img/` and `images/` folders.
+      let imageUrl;
+      if (imagePath.startsWith('@site/static/')) {
+        imageUrl = imagePath.replace('@site/static/', '/');
+      } else {
+        const relativePath = imagePath.replace(/^\.\//, '');
+        const normalizedBase = imgUrlBase.endsWith('/') ? imgUrlBase : imgUrlBase + '/';
+        imageUrl = normalizedBase + fileDir + relativePath;
+      }
       const cleanCaption = caption.replace(/<\/?b>/g, '**').replace(/<\/?strong>/g, '**');
       return '![' + alt + '](' + imageUrl + ')\n\n*' + cleanCaption + '*';
     }
@@ -337,24 +362,75 @@ function extractIncludeComponentBody(includeContent) {
   return returnMatch ? returnMatch[1] : body;
 }
 
+// Replace each <li> in an <ol> with an explicit `N. ` marker. Expanded list
+// items contain fenced code at column 0, which ends a Markdown list, so
+// relying on auto-numbering would restart every item at 1. Adjacent
+// ConditionalVersionDocs blocks are alternatives (only one renders in HTML),
+// so the second block reuses the first block's numbering.
+function numberOrderedListItems(body) {
+  return body.replace(/<ol>([\s\S]*?)<\/ol>/g, (match, items) => {
+    let itemNumber = 0;
+    let groupStartNumber = 0;
+    let lastGroupEnd = -1;
+    return items.replace(
+      /<li>\s*|<ConditionalVersionDocs\b[^>]*>|<\/ConditionalVersionDocs>/g,
+      (tag, offset) => {
+        if (tag.startsWith('<li>')) return `${++itemNumber}. `;
+        if (tag.startsWith('</')) {
+          lastGroupEnd = offset + tag.length;
+          return tag;
+        }
+        const isAlternative =
+          lastGroupEnd >= 0 && items.slice(lastGroupEnd, offset).trim() === '';
+        if (isAlternative) {
+          itemNumber = groupStartNumber;
+        } else {
+          groupStartNumber = itemNumber;
+        }
+        return tag;
+      }
+    );
+  });
+}
+
 function processIncludeTemplate(includeContent, substitutions) {
   let body = extractIncludeComponentBody(includeContent);
-  body = body.replace(/const tooltipNightly[\s\S]*?;\s*/g, '');
-  body = body.replace(/const tooltipStable[\s\S]*?;\s*/g, '');
   body = body.replace(/\(\{tooltipNightly\}\)/g, '(nightly)');
   body = body.replace(/\(\{tooltipStable\}\)/g, '(stable)');
   body = body.replace(/<Tooltip[\s\S]*?\/>/g, '');
-  for (const [key, value] of Object.entries(substitutions)) {
-    body = body.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
-  }
-  body = convertConditionalVersionDocsToMarkdown(body);
+  body = body.replace(/<\/?>/g, '');
+  body = body.replace(/\{(['"])(\s*)\1\}/g, '$2');
+  body = numberOrderedListItems(body);
+
+  // Start each fence at column 0. The JSX indentation in front of <CodeBlock>
+  // is meaningless, and in Markdown it would turn the fence opener into an
+  // indented code block that no longer pairs with its closer.
+  body = body.replace(/^[ \t]+(?=<CodeBlock\b)/gm, '');
   body = convertCodeBlockToMarkdown(body, substitutions);
-  body = convertAdmonitionToMarkdown(body);
-  body = body.replace(/<Link to="([^"]+)">([\s\S]*?)<\/Link>/g, '[$2]($1)');
+
+  const { content: protectedBody, blocks } = protectFencedCodeBlocks(body);
+  body = protectedBody;
+  body = body.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(substitutions, name)
+      ? String(substitutions[name])
+      : match
+  );
+  body = convertConditionalVersionDocsToMarkdown(body);
+  body = body.replace(
+    /<Link to="([^"]+)">([\s\S]*?)<\/Link>/g,
+    (match, to, text) => `[${text.trim().replace(/\s+/g, ' ')}](${to})`
+  );
   body = body.replace(/<a\s+href="([^"]+)"><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
+  body = convertAdmonitionToMarkdown(body);
   body = removeDivTags(body);
   body = convertTabsToMarkdown(body);
+  body = body.replace(/<code>([^<]*)<\/code>/g, '`$1`');
+  body = body.replace(/<b>([^<]*)<\/b>/g, '**$1**');
   body = body.replace(/<[^>]+>/g, '');
+  // Same reason as for the fences: outside code, JSX indentation would read
+  // as Markdown indented code blocks.
+  body = body.replace(/^[ \t]+|[ \t]+$/gm, '');
+  body = restoreFencedCodeBlocks(body, blocks);
   return body.trim();
 }
 
@@ -363,7 +439,7 @@ function convertInstallModularToMarkdown(content, pluginContext) {
   const includeTemplate = pluginContext.includeTemplates?.['install-modular'];
   if (!includeTemplate) return content;
 
-  return content.replace(/<InstallModular\s+([^>]*?)\/>/gi, (match) => {
+  return content.replace(/<InstallModular\b[^>]*?\/>/gi, (match) => {
     const folder = extractAttribute(match, 'folder') || 'example-project';
     const extraMatch = match.match(/extraLibraries=\{(\[[^\]]*\])\}/);
     let extraLibs = [];
@@ -892,13 +968,17 @@ async function writeProcessedMarkdownToBuild({
   await fs.writeFile(destPath, cleanedContent, 'utf8');
 }
 
+// `img/` holds images referenced from Markdown; `images/` holds images that
+// MDX pulls in with require(), such as <figure> blocks.
+const IMAGE_DIR_NAMES = ['img', 'images'];
+
 // Copy image directories from docs to build.
 // `destPrefix` (e.g. a version URL prefix like 'nightly') is prepended to the
 // output path so versioned docs land under the right subtree.
 async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
   const imageDirs = [];
 
-  // Recursively find all 'img' directories in docs
+  // Recursively find all image directories in docs
   function findImgDirs(dir, baseDir = dir) {
     const files = fs.readdirSync(dir);
 
@@ -907,10 +987,10 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
       const stat = fs.statSync(filePath);
 
       if (stat.isDirectory()) {
-        if (file === 'img') {
-          // Found an img directory, store its relative path
+        if (IMAGE_DIR_NAMES.includes(file)) {
+          // Found an image directory, store its relative path
           const relativePath = path.relative(baseDir, dir);
-          imageDirs.push({ source: filePath, relativePath });
+          imageDirs.push({ source: filePath, relativePath, dirName: file });
         } else {
           // Continue searching in subdirectories
           findImgDirs(filePath, baseDir);
@@ -919,25 +999,25 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
     });
   }
 
-  // Find all img directories
+  // Find all image directories
   findImgDirs(docsDir);
 
-  // Copy each img directory to build
+  // Copy each image directory to build
   let copiedCount = 0;
-  for (const { source, relativePath } of imageDirs) {
+  for (const { source, relativePath, dirName } of imageDirs) {
     try {
       const destRel = path.posix.join(
         String(destPrefix).replace(/\\/g, '/'),
         relativePath.replace(/\\/g, '/'),
-        'img'
+        dirName
       );
       const destination = resolveSafeDestPath(buildDir, destRel);
       await fs.copy(source, destination);
       const imageCount = fs.readdirSync(source).length;
-      console.log(`  ✓ Copied: ${relativePath}/img/ (${imageCount} images)`);
+      console.log(`  ✓ Copied: ${relativePath}/${dirName}/ (${imageCount} images)`);
       copiedCount++;
     } catch (error) {
-      console.error(`  ✗ Failed to copy ${relativePath}/img/:`, error.message);
+      console.error(`  ✗ Failed to copy ${relativePath}/${dirName}/:`, error.message);
     }
   }
 
