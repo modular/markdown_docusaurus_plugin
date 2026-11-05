@@ -235,6 +235,242 @@ function convertRequirementsToMarkdown(content) {
   );
 }
 
+// Temporarily replace fenced code blocks so downstream regexes cannot corrupt them.
+// The step-9 JSX stripper matches /<[A-Z].../ and treats heredoc markers like
+// `<<EOF` as component tags (<EOF ...>) because `[A-Z]` matches the E in EOF.
+// It then deletes everything until the next self-closing JSX tag (e.g.
+// `<InstallOpenAI />`), leaving an unclosed ``` fence in the emitted .md file.
+function protectFencedCodeBlocks(content) {
+  const blocks = [];
+  const protectedContent = content.replace(
+    /(^|\n)(```[\s\S]*?\n```)/g,
+    (match, prefix, block) => {
+      const token = `__FENCE_${blocks.length}__`;
+      blocks.push(block);
+      return prefix + token;
+    }
+  );
+  return { content: protectedContent, blocks };
+}
+
+function restoreFencedCodeBlocks(content, blocks) {
+  return blocks.reduce(
+    (text, block, index) => text.replace(`__FENCE_${index}__`, () => block),
+    content
+  );
+}
+
+// Evaluate a JS template literal's source the way the browser would: unescape
+// `\\`, `\``, and `\$`, and interpolate `${name}` for known substitutions.
+// Unknown `${...}` expressions are left as written.
+function evaluateTemplateLiteral(source, substitutions = {}) {
+  return source.replace(/\\([\\`$])|\$\{(\w+)\}/g, (match, escaped, name) => {
+    if (escaped !== undefined) return escaped;
+    return Object.prototype.hasOwnProperty.call(substitutions, name)
+      ? String(substitutions[name])
+      : match;
+  });
+}
+
+// Convert Docusaurus CodeBlock components to fenced code blocks
+function convertCodeBlockToMarkdown(content, substitutions = {}) {
+  content = content.replace(
+    /<CodeBlock\s+language="([^"]+)"(?:\s+title="([^"]*)")?\s*>\s*\{`([\s\S]*?)`\}\s*<\/CodeBlock>/g,
+    (match, language, title, code) => {
+      const cleanCode = evaluateTemplateLiteral(code, substitutions);
+      const opener = title
+        ? '```' + language + ' title="' + title + '"'
+        : '```' + language;
+      return opener + '\n' + cleanCode + '\n```';
+    }
+  );
+  return content.replace(
+    /<CodeBlock\s+language="([^"]+)"[^>]*>\s*\n?\s*([^<{][\s\S]*?)\s*<\/CodeBlock>/g,
+    (match, language, code) => '```' + language + '\n' + code.trim() + '\n```'
+  );
+}
+
+// Include both nightly and stable branches so agents see all install paths
+function convertConditionalVersionDocsToMarkdown(content) {
+  content = content.replace(
+    /<ConditionalVersionDocs\s+version="nightly">\s*([\s\S]*?)<\/ConditionalVersionDocs>/gi,
+    (match, inner) => '**Nightly:**\n\n' + inner.trim() + '\n\n'
+  );
+  return content.replace(
+    /<ConditionalVersionDocs\s+version="stable">\s*([\s\S]*?)<\/ConditionalVersionDocs>/gi,
+    (match, inner) => '**Stable:**\n\n' + inner.trim() + '\n\n'
+  );
+}
+
+function convertAdmonitionToMarkdown(content) {
+  return content.replace(
+    /<Admonition\s+type="([^"]+)">\s*([\s\S]*?)<\/Admonition>/g,
+    (match, type, inner) => {
+      // Admonition children are JSX, where indentation carries no meaning.
+      // Keeping it would turn deeply nested lines into indented code blocks.
+      const cleanInner = inner
+        .replace(/<p>/g, '')
+        .replace(/<\/p>/g, '\n')
+        .replace(/<b>([^<]*)<\/b>/g, '**$1**')
+        .replace(/<code>([^<]*)<\/code>/g, '`$1`')
+        .replace(/<[^>]+>/g, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      // Authors often open with their own bold label (`<b>Tip:</b>`); don't
+      // prepend a second one.
+      const hasOwnLabel = /^\*\*[^*\n]+:\*\*/.test(cleanInner);
+      const quoted = cleanInner
+        .split('\n')
+        .map((line, index) => {
+          if (index === 0 && !hasOwnLabel) {
+            return line.length ? `> **${type}:** ${line}` : `> **${type}:**`;
+          }
+          return line.length ? `> ${line}` : '>';
+        })
+        .join('\n');
+      return quoted + '\n';
+    }
+  );
+}
+
+function convertFigureToMarkdown(content, fileDir, imgUrlBase) {
+  return content.replace(
+    /<figure>\s*<img src=\{require\(['"]([^'"]+)['"]\)\.default\}[^>]*alt="([^"]*)"[^>]*\/>\s*<figcaption>([\s\S]*?)<\/figcaption>\s*<\/figure>/g,
+    (match, imagePath, alt, caption) => {
+      // Relative paths resolve against the doc's directory, which works because
+      // copyImageDirectories copies the doc tree's `img/` and `images/` folders.
+      let imageUrl;
+      if (imagePath.startsWith('@site/static/')) {
+        imageUrl = imagePath.replace('@site/static/', '/');
+      } else {
+        const relativePath = imagePath.replace(/^\.\//, '');
+        const normalizedBase = imgUrlBase.endsWith('/') ? imgUrlBase : imgUrlBase + '/';
+        imageUrl = normalizedBase + fileDir + relativePath;
+      }
+      const cleanCaption = caption.replace(/<\/?b>/g, '**').replace(/<\/?strong>/g, '**');
+      return '![' + alt + '](' + imageUrl + ')\n\n*' + cleanCaption + '*';
+    }
+  );
+}
+
+function extractIncludeComponentBody(includeContent) {
+  let body = includeContent.replace(/^import[\s\S]*?(?=^export default)/m, '');
+  const returnMatch = body.match(/return\s*\(\s*([\s\S]*)\s*\)\s*;\s*\}\s*$/);
+  return returnMatch ? returnMatch[1] : body;
+}
+
+// Replace each <li> in an <ol> with an explicit `N. ` marker. Expanded list
+// items contain fenced code at column 0, which ends a Markdown list, so
+// relying on auto-numbering would restart every item at 1. Adjacent
+// ConditionalVersionDocs blocks are alternatives (only one renders in HTML),
+// so the second block reuses the first block's numbering.
+function numberOrderedListItems(body) {
+  return body.replace(/<ol>([\s\S]*?)<\/ol>/g, (match, items) => {
+    let itemNumber = 0;
+    let groupStartNumber = 0;
+    let lastGroupEnd = -1;
+    return items.replace(
+      /<li>\s*|<ConditionalVersionDocs\b[^>]*>|<\/ConditionalVersionDocs>/g,
+      (tag, offset) => {
+        if (tag.startsWith('<li>')) return `${++itemNumber}. `;
+        if (tag.startsWith('</')) {
+          lastGroupEnd = offset + tag.length;
+          return tag;
+        }
+        const isAlternative =
+          lastGroupEnd >= 0 && items.slice(lastGroupEnd, offset).trim() === '';
+        if (isAlternative) {
+          itemNumber = groupStartNumber;
+        } else {
+          groupStartNumber = itemNumber;
+        }
+        return tag;
+      }
+    );
+  });
+}
+
+function processIncludeTemplate(includeContent, substitutions) {
+  let body = extractIncludeComponentBody(includeContent);
+  body = body.replace(/\(\{tooltipNightly\}\)/g, '(nightly)');
+  body = body.replace(/\(\{tooltipStable\}\)/g, '(stable)');
+  body = body.replace(/<Tooltip[\s\S]*?\/>/g, '');
+  body = body.replace(/<\/?>/g, '');
+  body = body.replace(/\{(['"])(\s*)\1\}/g, '$2');
+  body = numberOrderedListItems(body);
+
+  // Start each fence at column 0. The JSX indentation in front of <CodeBlock>
+  // is meaningless, and in Markdown it would turn the fence opener into an
+  // indented code block that no longer pairs with its closer.
+  body = body.replace(/^[ \t]+(?=<CodeBlock\b)/gm, '');
+  body = convertCodeBlockToMarkdown(body, substitutions);
+
+  const { content: protectedBody, blocks } = protectFencedCodeBlocks(body);
+  body = protectedBody;
+  body = body.replace(/\{(\w+)\}/g, (match, name) =>
+    Object.prototype.hasOwnProperty.call(substitutions, name)
+      ? String(substitutions[name])
+      : match
+  );
+  body = convertConditionalVersionDocsToMarkdown(body);
+  body = body.replace(
+    /<Link to="([^"]+)">([\s\S]*?)<\/Link>/g,
+    (match, to, text) => `[${text.trim().replace(/\s+/g, ' ')}](${to})`
+  );
+  body = body.replace(/<a\s+href="([^"]+)"><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
+  body = convertAdmonitionToMarkdown(body);
+  body = removeDivTags(body);
+  body = convertTabsToMarkdown(body);
+  body = body.replace(/<code>([^<]*)<\/code>/g, '`$1`');
+  body = body.replace(/<b>([^<]*)<\/b>/g, '**$1**');
+  body = body.replace(/<[^>]+>/g, '');
+  // Same reason as for the fences: outside code, JSX indentation would read
+  // as Markdown indented code blocks.
+  body = body.replace(/^[ \t]+|[ \t]+$/gm, '');
+  body = restoreFencedCodeBlocks(body, blocks);
+  return body.trim();
+}
+
+function convertInstallModularToMarkdown(content, pluginContext) {
+  if (!pluginContext) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-modular'];
+  if (!includeTemplate) return content;
+
+  return content.replace(/<InstallModular\b[^>]*?\/>/gi, (match) => {
+    const folder = extractAttribute(match, 'folder') || 'example-project';
+    const extraMatch = match.match(/extraLibraries=\{(\[[^\]]*\])\}/);
+    let extraLibs = [];
+    if (extraMatch) {
+      try {
+        extraLibs = JSON.parse(extraMatch[1].replace(/'/g, '"'));
+      } catch (error) {
+        extraLibs = [];
+      }
+    }
+    const extraLibsString = extraLibs.length > 0 ? ' ' + extraLibs.join(' ') : '';
+    const extraLibsDescription =
+      extraLibs.length > 0 ? ' and other required packages' : '';
+    return processIncludeTemplate(includeTemplate, {
+      folder,
+      extraLibsString,
+      extraLibsDescription,
+    });
+  });
+}
+
+function convertInstallOpenAIToMarkdown(content, pluginContext) {
+  if (!pluginContext) return content;
+  const includeTemplate = pluginContext.includeTemplates?.['install-openai'];
+  if (!includeTemplate) return content;
+
+  return content.replace(/<InstallOpenAI\s*\/>/gi, () =>
+    processIncludeTemplate(includeTemplate, {})
+  );
+}
+
 // Unwrap MDX components by removing their tags but preserving inner content
 function unwrapMdxComponents(content) {
   // List of MDX components to unwrap (keeps growing as we find more)
@@ -243,7 +479,7 @@ function unwrapMdxComponents(content) {
   const components = [
     'ModelSelector',
     'ModelDropdownTabs',
-    'InstallModular'
+    'InstallModular',
   ];
 
   for (const comp of components) {
@@ -315,7 +551,8 @@ function cleanMarkdownForDisplay(
   content,
   filepath,
   docsPath = '/docs/',
-  assetBasePath = undefined
+  assetBasePath = undefined,
+  pluginContext = undefined
 ) {
   const imgUrlBase =
     assetBasePath !== undefined ? assetBasePath : docsPath;
@@ -345,6 +582,13 @@ function cleanMarkdownForDisplay(
 
   // 6. Convert Requirements component to link
   content = convertRequirementsToMarkdown(content);
+
+  // Expand shared MDX includes into markdown (improves .md/HTML parity for agents)
+  content = convertInstallModularToMarkdown(content, pluginContext);
+  content = convertInstallOpenAIToMarkdown(content, pluginContext);
+  content = convertConditionalVersionDocsToMarkdown(content);
+  content = convertCodeBlockToMarkdown(content);
+  content = convertAdmonitionToMarkdown(content);
 
   // Convert Button components with DocLink to markdown links
   content = content.replace(
@@ -400,10 +644,20 @@ function cleanMarkdownForDisplay(
   // 8. Convert details/summary components to readable markdown (preserve content)
   content = convertDetailsToMarkdown(content);
 
+  // Convert figure blocks before stripping remaining JSX components
+  content = convertFigureToMarkdown(content, fileDir, imgUrlBase);
+
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
-  // This runs AFTER Tabs/details conversion to preserve their content
-  content = content.replace(/<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g, '');
+  // This runs AFTER Tabs/details conversion to preserve their content.
+  // Fenced code blocks are protected first so heredoc syntax is not corrupted.
+  const { content: protectedContent, blocks: fencedBlocks } =
+    protectFencedCodeBlocks(content);
+  content = protectedContent.replace(
+    /<[A-Z][a-zA-Z]*[\s\S]*?(?:\/>|<\/[A-Z][a-zA-Z]*>)/g,
+    ''
+  );
+  content = restoreFencedCodeBlocks(content, fencedBlocks);
 
   // 10. Convert relative image paths to absolute paths from docs root
   // Matches: ![alt](./img/file.png) or ![alt](img/file.png)
@@ -688,6 +942,7 @@ async function writeProcessedMarkdownToBuild({
   docsPrefix,
   extraLinkPrefixes = [],
   fileContent,
+  pluginContext,
 }) {
   await fs.ensureDir(path.dirname(destPath));
   const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
@@ -695,7 +950,8 @@ async function writeProcessedMarkdownToBuild({
     content,
     mdFileRelativeForCleaning,
     docsPath,
-    assetBasePath
+    assetBasePath,
+    pluginContext
   );
   if (directive) {
     cleanedContent = directive + '\n\n' + cleanedContent;
@@ -712,13 +968,17 @@ async function writeProcessedMarkdownToBuild({
   await fs.writeFile(destPath, cleanedContent, 'utf8');
 }
 
+// `img/` holds images referenced from Markdown; `images/` holds images that
+// MDX pulls in with require(), such as <figure> blocks.
+const IMAGE_DIR_NAMES = ['img', 'images'];
+
 // Copy image directories from docs to build.
 // `destPrefix` (e.g. a version URL prefix like 'nightly') is prepended to the
 // output path so versioned docs land under the right subtree.
 async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
   const imageDirs = [];
 
-  // Recursively find all 'img' directories in docs
+  // Recursively find all image directories in docs
   function findImgDirs(dir, baseDir = dir) {
     const files = fs.readdirSync(dir);
 
@@ -727,10 +987,10 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
       const stat = fs.statSync(filePath);
 
       if (stat.isDirectory()) {
-        if (file === 'img') {
-          // Found an img directory, store its relative path
+        if (IMAGE_DIR_NAMES.includes(file)) {
+          // Found an image directory, store its relative path
           const relativePath = path.relative(baseDir, dir);
-          imageDirs.push({ source: filePath, relativePath });
+          imageDirs.push({ source: filePath, relativePath, dirName: file });
         } else {
           // Continue searching in subdirectories
           findImgDirs(filePath, baseDir);
@@ -739,25 +999,25 @@ async function copyImageDirectories(docsDir, buildDir, destPrefix = '') {
     });
   }
 
-  // Find all img directories
+  // Find all image directories
   findImgDirs(docsDir);
 
-  // Copy each img directory to build
+  // Copy each image directory to build
   let copiedCount = 0;
-  for (const { source, relativePath } of imageDirs) {
+  for (const { source, relativePath, dirName } of imageDirs) {
     try {
       const destRel = path.posix.join(
         String(destPrefix).replace(/\\/g, '/'),
         relativePath.replace(/\\/g, '/'),
-        'img'
+        dirName
       );
       const destination = resolveSafeDestPath(buildDir, destRel);
       await fs.copy(source, destination);
       const imageCount = fs.readdirSync(source).length;
-      console.log(`  ✓ Copied: ${relativePath}/img/ (${imageCount} images)`);
+      console.log(`  ✓ Copied: ${relativePath}/${dirName}/ (${imageCount} images)`);
       copiedCount++;
     } catch (error) {
-      console.error(`  ✗ Failed to copy ${relativePath}/img/:`, error.message);
+      console.error(`  ✗ Failed to copy ${relativePath}/${dirName}/:`, error.message);
     }
   }
 
@@ -816,7 +1076,7 @@ function permalinkToDestMd(permalink, baseUrl, supportDirectoryIndex) {
   return supportDirectoryIndex ? `${p}/index.md` : `${p}.md`;
 }
 
-module.exports = function markdownSourcePlugin(context, options = {}) {
+function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
@@ -893,6 +1153,21 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
         }
       }
 
+      const includeTemplates = {};
+      const includesDir = path.join(context.siteDir, docsDirName, '_includes');
+      for (const [key, file] of [['install-modular', 'install-modular.mdx'], ['install-openai', 'install-openai.mdx']]) {
+        const p = path.join(includesDir, file);
+        if (fs.existsSync(p)) {
+          includeTemplates[key] = fs.readFileSync(p, 'utf8');
+        }
+      }
+
+      const pluginContext = {
+        siteDir: context.siteDir,
+        docsDirName,
+        includeTemplates,
+      };
+
       let copiedCount = 0;
       let imgDirCount = 0;
 
@@ -957,6 +1232,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
                 siteUrl,
                 docsPrefix,
                 extraLinkPrefixes: blogLinkPrefixes,
+                pluginContext,
               });
               copiedCount++;
               versionCount++;
@@ -1028,6 +1304,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
               docsPrefix,
               extraLinkPrefixes: blogLinkPrefixes,
               fileContent: raw,
+              pluginContext,
             });
             copiedCount++;
 
@@ -1129,6 +1406,7 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
               docsPrefix,
               extraLinkPrefixes: blogLinkPrefixes,
               fileContent: raw,
+              pluginContext,
             });
             blogCopied++;
             copiedCount++;
@@ -1156,4 +1434,19 @@ module.exports = function markdownSourcePlugin(context, options = {}) {
       );
     },
   };
+}
+
+module.exports = markdownSourcePlugin;
+
+module.exports._internals = {
+  cleanMarkdownForDisplay,
+  protectFencedCodeBlocks,
+  restoreFencedCodeBlocks,
+  convertCodeBlockToMarkdown,
+  convertConditionalVersionDocsToMarkdown,
+  convertAdmonitionToMarkdown,
+  convertFigureToMarkdown,
+  convertInstallModularToMarkdown,
+  convertInstallOpenAIToMarkdown,
+  unwrapMdxComponents,
 };
