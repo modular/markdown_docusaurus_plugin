@@ -235,6 +235,23 @@ function convertRequirementsToMarkdown(content) {
   );
 }
 
+// Placeholder tokens are wrapped in a Unicode private-use character, which
+// never appears in documentation text, so restoring tokens can't collide with
+// a literal `__FENCE_0__` written on the page.
+const TOKEN_MARK = '\uE000';
+const fenceToken = (index) => `${TOKEN_MARK}FENCE${index}${TOKEN_MARK}`;
+const codeToken = (index) => `${TOKEN_MARK}CODE${index}${TOKEN_MARK}`;
+const FENCE_TOKEN_PATTERN = new RegExp(`${TOKEN_MARK}FENCE(\\d+)${TOKEN_MARK}`, 'g');
+const CODE_TOKEN_PATTERN = new RegExp(`${TOKEN_MARK}CODE(\\d+)${TOKEN_MARK}`, 'g');
+
+// Restore every token in a single pass. Replacing tokens one at a time rescans
+// the whole page per token, which is quadratic on pages with thousands of
+// inline code spans. The function replacement keeps `$&`, `$'`, and `$$`
+// inside code literal.
+function restoreTokens(content, pattern, values) {
+  return content.replace(pattern, (token, index) => values[index] ?? token);
+}
+
 // Temporarily replace fenced code blocks so downstream regexes cannot corrupt them.
 // The step-9 JSX stripper matches /<[A-Z].../ and treats heredoc markers like
 // `<<EOF` as component tags (<EOF ...>) because `[A-Z]` matches the E in EOF.
@@ -267,7 +284,7 @@ function protectFencedCodeBlocks(content) {
         }
       }
       if (close !== -1) {
-        out.push(`__FENCE_${blocks.length}__`);
+        out.push(fenceToken(blocks.length));
         blocks.push(lines.slice(i, close + 1).join('\n'));
         i = close + 1;
         continue;
@@ -280,10 +297,7 @@ function protectFencedCodeBlocks(content) {
 }
 
 function restoreFencedCodeBlocks(content, blocks) {
-  return blocks.reduce(
-    (text, block, index) => text.replace(`__FENCE_${index}__`, () => block),
-    content
-  );
+  return restoreTokens(content, FENCE_TOKEN_PATTERN, blocks);
 }
 
 // Evaluate a JS template literal's source the way the browser would: unescape
@@ -307,7 +321,7 @@ function protectInlineCode(content) {
   const protectedContent = content.replace(
     /(?<!`)(`+)(?!`)((?:[^\n]|\n(?![ \t]*\n))+?)(?<!`)\1(?!`)/g,
     (match) => {
-      const token = `__CODE_${spans.length}__`;
+      const token = codeToken(spans.length);
       spans.push(match);
       return token;
     }
@@ -316,11 +330,7 @@ function protectInlineCode(content) {
 }
 
 function restoreInlineCode(content, spans) {
-  // A function replacement keeps `$&`, `$'`, and `$$` in code literal.
-  return spans.reduce(
-    (text, span, index) => text.replace(`__CODE_${index}__`, () => span),
-    content
-  );
+  return restoreTokens(content, CODE_TOKEN_PATTERN, spans);
 }
 
 // Apply `transform` to everything except fenced code blocks and inline code.
@@ -1510,6 +1520,8 @@ module.exports._internals = {
   restoreFencedCodeBlocks,
   protectInlineCode,
   restoreInlineCode,
+  fenceToken,
+  codeToken,
   transformOutsideCode,
   convertLinksToAbsoluteUrls,
   convertCodeBlockToMarkdown,

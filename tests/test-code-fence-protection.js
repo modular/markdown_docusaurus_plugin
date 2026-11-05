@@ -9,6 +9,7 @@ const {
   cleanMarkdownForDisplay,
   protectFencedCodeBlocks,
   restoreFencedCodeBlocks,
+  fenceToken,
   convertCodeBlockToMarkdown,
   convertConditionalVersionDocsToMarkdown,
   convertAdmonitionToMarkdown,
@@ -42,7 +43,7 @@ test('round-trips a simple fenced block', () => {
   const input = 'before\n```python\nprint("hi")\n```\nafter';
   const { content, blocks } = protectFencedCodeBlocks(input);
   assert(!content.includes('```python'), 'fence should be replaced by token');
-  assert(content.includes('__FENCE_0__'), 'token should be present');
+  assert(content.includes(fenceToken(0)), 'token should be present');
   const restored = restoreFencedCodeBlocks(content, blocks);
   assert(restored.includes('```python\nprint("hi")\n```'), 'fence should be restored');
   assert(restored.includes('before'), 'surrounding text preserved');
@@ -53,8 +54,8 @@ test('round-trips multiple fenced blocks', () => {
   const input = '```js\na()\n```\ntext\n```bash\nb()\n```';
   const { content, blocks } = protectFencedCodeBlocks(input);
   assert.strictEqual(blocks.length, 2);
-  assert(content.includes('__FENCE_0__'));
-  assert(content.includes('__FENCE_1__'));
+  assert(content.includes(fenceToken(0)));
+  assert(content.includes(fenceToken(1)));
   const restored = restoreFencedCodeBlocks(content, blocks);
   assert(restored.includes('```js\na()\n```'));
   assert(restored.includes('```bash\nb()\n```'));

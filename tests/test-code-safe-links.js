@@ -13,6 +13,8 @@ const {
   protectInlineCode,
   restoreInlineCode,
   convertLinksToAbsoluteUrls,
+  fenceToken,
+  codeToken,
 } = require('../index')._internals;
 
 let passed = 0;
@@ -47,7 +49,7 @@ test('protects a fence indented inside a list item', () => {
 test('protects tilde fences', () => {
   const input = '~~~mojo\nf[a](b)\n~~~';
   const { content, blocks } = protectFencedCodeBlocks(input);
-  assert.strictEqual(content, '__FENCE_0__');
+  assert.strictEqual(content, fenceToken(0));
   assert.strictEqual(blocks[0], input);
 });
 
@@ -55,7 +57,7 @@ test('a longer outer fence contains a shorter inner fence', () => {
   const input = '````md\n```mojo\nf[a](b)\n```\n````\nafter';
   const { content, blocks } = protectFencedCodeBlocks(input);
   assert.strictEqual(blocks.length, 1);
-  assert.strictEqual(content, '__FENCE_0__\nafter');
+  assert.strictEqual(content, `${fenceToken(0)}\nafter`);
 });
 
 test('does not close a fence on an opening fence with an info string', () => {
@@ -77,7 +79,7 @@ console.log('\nprotectInlineCode:');
 test('protects single and double backtick spans', () => {
   const input = 'Call `f[a](b)` or ``g`[c](d)`` here.';
   const { content, spans } = protectInlineCode(input);
-  assert.strictEqual(content, 'Call __CODE_0__ or __CODE_1__ here.');
+  assert.strictEqual(content, `Call ${codeToken(0)} or ${codeToken(1)} here.`);
   assert.strictEqual(restoreInlineCode(content, spans), input);
 });
 
@@ -89,7 +91,7 @@ test('does not span a paragraph break', () => {
 
 console.log('\nconvertLinksToAbsoluteUrls:');
 
-test('does not rewrite a multi-line Mojo call in a fence (DOCS-2922)', () => {
+test('does not rewrite a multi-line Mojo call in a fence', () => {
   const input =
     '```mojo\n        ctx.enqueue_function[print_threads](\n' +
     '            grid_dim=2, block_dim=64\n        )\n```';
@@ -137,6 +139,21 @@ test('keeps $ replacement patterns in code literal', () => {
     "```bash\necho $'a' $& $$ [x](y)\n```\nand `$' $&` " +
       '[z](https://example.com/gpu/z.md)'
   );
+});
+
+test('does not confuse literal token-like text with protected code', () => {
+  const input = 'Literal __CODE_0__ and __FENCE_0__ then `a[b](c)` and [l](/gpu/x)';
+  const out = rewrite(input);
+  assert(out.startsWith('Literal __CODE_0__ and __FENCE_0__ then `a[b](c)` and ['));
+});
+
+test('rewrites a page with many inline code spans in linear time', () => {
+  let input = '';
+  for (let i = 0; i < 20000; i++) input += `Use \`x${i}\` and [l](/gpu/a${i}).\n`;
+  const start = Date.now();
+  const out = rewrite(input);
+  assert(out.includes('`x19999`'));
+  assert(Date.now() - start < 1000, `took ${Date.now() - start} ms`);
 });
 
 test('leaves reference-style definitions inside fences alone', () => {
