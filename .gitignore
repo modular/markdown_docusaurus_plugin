@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+node_modules
 
 # Lock files (users should generate their own)
 package-lock.json
