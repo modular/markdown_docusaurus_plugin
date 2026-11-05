@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Self-closing **`<InstallModular />`** and **`<InstallOpenAI />`** components expand into Markdown from **`docs/_includes/install-modular.mdx`** and **`install-openai.mdx`** when those files exist, so the **`.md`** output carries the same install steps as the HTML page.
 - **`CodeBlock`**, **`ConditionalVersionDocs`** (both nightly and stable branches), **`Admonition`**, and **`<figure>`** blocks with **`require()`** images convert to Markdown instead of being stripped.
-- **`images/`** directories in the docs tree are copied to the build alongside **`img/`**, so converted figure URLs resolve.
 
 ### Fixed
 

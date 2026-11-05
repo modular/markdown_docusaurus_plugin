@@ -1099,6 +1099,9 @@ function resolveImagePaths(content, { sourceDir, contentRoot, urlPrefix, urlBase
       const rel = path.relative(contentRoot, absPath);
       if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return match;
       if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return match;
+      // A symlink inside the docs tree must not pull in a file from outside it.
+      const realRel = path.relative(fs.realpathSync(contentRoot), fs.realpathSync(absPath));
+      if (realRel.startsWith('..') || path.isAbsolute(realRel)) return match;
       const relPosix = rel.split(path.sep).join('/');
       const destRel = [urlPrefix, relPosix].filter(Boolean).join('/');
       files.push({ source: absPath, destRel });
@@ -1118,7 +1121,8 @@ async function copyResolvedImages(files, buildDir, copiedImages) {
     try {
       const dest = resolveSafeDestPath(buildDir, destRel);
       if (await fs.pathExists(dest)) continue;
-      await fs.copy(source, dest);
+      // Copy the file a validated symlink points to, not the link itself.
+      await fs.copy(source, dest, { dereference: true });
     } catch (error) {
       console.error(`  ✗ Failed to copy image ${destRel}:`, error.message);
     }
@@ -1175,9 +1179,10 @@ async function writeProcessedMarkdownToBuild({
   await fs.writeFile(destPath, cleanedContent, 'utf8');
 }
 
-// `img/` holds images referenced from Markdown; `images/` holds images that
-// MDX pulls in with require(), such as <figure> blocks.
-const IMAGE_DIR_NAMES = ['img', 'images'];
+// Only `img/` folders are copied wholesale. Other relative images are copied
+// one file at a time by resolveImagePaths(), so unreferenced files stay out of
+// the build.
+const IMAGE_DIR_NAMES = ['img'];
 
 // Copy image directories from docs to build.
 // `destPrefix` (e.g. a version URL prefix like 'nightly') is prepended to the

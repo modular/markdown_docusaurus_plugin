@@ -94,6 +94,16 @@ test('resolves ../images/ against the source file and lists the copy', () => {
   ]);
 });
 
+test('ignores a symlink that points outside the content root', () => {
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'md-outside-'));
+  fs.writeFileSync(path.join(outside, 'secret.png'), '');
+  fs.symlinkSync(path.join(outside, 'secret.png'), path.join(root, 'images', 'link.png'));
+  const input = '![](../images/link.png)';
+  const { content, files } = resolveImagePaths(input, ctx());
+  assert.strictEqual(content, input);
+  assert.deepStrictEqual(files, []);
+});
+
 test('adds the version prefix', () => {
   const { content, files } = resolveImagePaths('![](../images/gpu/sm.png)', ctx('nightly'));
   assert.strictEqual(content, '![](https://example.com/nightly/images/gpu/sm.png)');
