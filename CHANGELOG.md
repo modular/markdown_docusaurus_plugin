@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`<ListingCards>`** grids become a Markdown list with one **`- [title](url): description`** item per **`<ListingCard />`**. Previously the cards were dropped and a stray **`</ListingCards>`** tag was left in the output.
+
 ## [2.2.0] - 2026-11-04
 
 ### Added
