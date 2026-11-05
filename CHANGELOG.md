@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-04
+
 ### Added
 
 - Self-closing **`<InstallModular />`** and **`<InstallOpenAI />`** components expand into Markdown from **`_includes/install-modular.mdx`** and **`install-openai.mdx`** when those files exist, so the **`.md`** output carries the same install steps as the HTML page. Each docs version reads its own **`_includes`**, so stable pages get the stable include.
