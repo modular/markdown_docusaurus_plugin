@@ -951,13 +951,36 @@ function cleanMarkdownForDisplay(
   return content;
 }
 
+// Extensions that name a file rather than a page, so links to them keep their
+// path and don't get `.md` appended. Anything else, including a dotted slug
+// such as `/releases/v26.7`, is a page.
+const FILE_LINK_EXTENSIONS = new Set([
+  '.txt', '.json', '.xml', '.yaml', '.yml', '.toml', '.csv', '.pdf', '.zip',
+  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ipynb', '.py', '.mojo',
+  '.sh', '.html',
+]);
+
 // Resolve a URL href to a fully-qualified .md URL.
 // Handles relative paths (./foo, ../bar), site-root-absolute paths (/docs/foo),
 // fragments (#section), and already-qualified URLs (https://...).
-// docsPrefix is the URL path prefix where docs are served (e.g. '/docs' or ''),
-// used to map site-root-absolute links back to file-space paths.
-// extraPathPrefixes: other site-root prefixes (e.g. ['/releases']) for blog routes.
-function resolveLink(href, pageUrlDir, siteUrl, docsPrefix, extraPathPrefixes = []) {
+// docsPrefix is the URL path prefix where docs are served (e.g. '/docs'), or ''
+// when docs are served from the site root. It maps site-root-absolute doc links
+// back to the paths their .md files are emitted at.
+// extraPathPrefixes: blog route bases (e.g. ['/releases']). Blog .md files are
+// emitted under their route base, so links under one keep it.
+// options.versionPrefix: the page's docs version URL prefix (e.g. '/stable').
+// Docusaurus resolves a site-root file link such as `/packages.mdx` within the
+// page's own version, while a URL link such as `/install/` is taken as written.
+// options.directoryIndex: whether index docs are emitted as `dir/index.md`
+// (supportDirectoryIndex) rather than `dir.md`.
+function resolveLink(
+  href,
+  pageUrlDir,
+  siteUrl,
+  docsPrefix,
+  extraPathPrefixes = [],
+  { versionPrefix = '', directoryIndex = false } = {}
+) {
   if (!href
     || href.startsWith('http://')
     || href.startsWith('https://')
@@ -972,24 +995,19 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix, extraPathPrefixes = 
 
   if (!pathPart) return null;
 
+  const isDocFile = /\.mdx?$/.test(pathPart);
+  const underPrefix = (p) => pathPart === p || pathPart.startsWith(`${p}/`);
+
   if (pathPart.startsWith('/')) {
-    const prefixes = [];
-    if (docsPrefix) prefixes.push(docsPrefix);
-    for (const p of extraPathPrefixes) {
-      if (p && !prefixes.includes(p)) prefixes.push(p);
-    }
-    if (prefixes.length > 0) {
-      prefixes.sort((a, b) => b.length - a.length);
-      let matched = null;
-      for (const p of prefixes) {
-        if (pathPart === p || pathPart.startsWith(`${p}/`)) {
-          matched = p;
-          break;
-        }
+    const blogPrefix = extraPathPrefixes.some((p) => p && underPrefix(p));
+    if (!blogPrefix) {
+      if (docsPrefix) {
+        if (!underPrefix(docsPrefix)) return null;
+        pathPart = pathPart.slice(docsPrefix.length) || '/';
       }
-      if (!matched) return null;
-      pathPart = pathPart.slice(matched.length) || '/';
-      if (!pathPart.startsWith('/')) pathPart = `/${pathPart}`;
+      if (isDocFile && versionPrefix) {
+        pathPart = versionPrefix + pathPart;
+      }
     }
   } else {
     // Relative — resolve against the current file's directory
@@ -1002,10 +1020,15 @@ function resolveLink(href, pageUrlDir, siteUrl, docsPrefix, extraPathPrefixes = 
     pathPart = pathPart.slice(0, -1);
   }
 
-  const ext = path.posix.extname(pathPart);
-  if (ext === '.mdx') {
-    pathPart = pathPart.slice(0, -4) + '.md';
-  } else if (!ext) {
+  if (isDocFile) {
+    pathPart = pathPart.replace(/\.mdx?$/, '');
+    if (!directoryIndex) {
+      pathPart = pathPart.replace(/\/index$/, '') || '/index';
+    }
+    pathPart += '.md';
+  } else if (pathPart === '/') {
+    pathPart = '/index.md';
+  } else if (!FILE_LINK_EXTENSIONS.has(path.posix.extname(pathPart).toLowerCase())) {
     pathPart += '.md';
   }
 
@@ -1020,7 +1043,8 @@ function convertLinksToAbsoluteUrls(
   pageUrlDir,
   siteUrl,
   docsPrefix,
-  extraPathPrefixes = []
+  extraPathPrefixes = [],
+  linkOptions = {}
 ) {
   // Never rewrite inside code: Mojo syntax such as
   // `ctx.enqueue_function[kernel](grid_dim=2)` matches the inline-link pattern.
@@ -1037,7 +1061,8 @@ function convertLinksToAbsoluteUrls(
           pageUrlDir,
           siteUrl,
           docsPrefix,
-          extraPathPrefixes
+          extraPathPrefixes,
+          linkOptions
         );
         return resolved ? `[${text}](${resolved})` : match;
       }
@@ -1061,7 +1086,8 @@ function convertLinksToAbsoluteUrls(
           pageUrlDir,
           siteUrl,
           docsPrefix,
-          extraPathPrefixes
+          extraPathPrefixes,
+          linkOptions
         );
         return resolved ? `[${ref}]: ${resolved}` : match;
       }
@@ -1270,6 +1296,7 @@ async function writeProcessedMarkdownToBuild({
   fileContent,
   pluginContext,
   imageContext,
+  linkOptions,
 }) {
   await fs.ensureDir(path.dirname(destPath));
   const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
@@ -1299,7 +1326,8 @@ async function writeProcessedMarkdownToBuild({
       pageUrlDir,
       siteUrl,
       docsPrefix,
-      extraLinkPrefixes
+      extraLinkPrefixes,
+      linkOptions
     );
   }
   await fs.writeFile(destPath, cleanedContent, 'utf8');
@@ -1589,6 +1617,10 @@ function markdownSourcePlugin(context, options = {}) {
                 extraLinkPrefixes: blogLinkPrefixes,
                 pluginContext,
                 imageContext: imageContextFor(contentPath, prefix),
+                linkOptions: {
+                  versionPrefix: prefix ? `/${prefix}` : '',
+                  directoryIndex: supportDirectoryIndex,
+                },
               });
               copiedCount++;
               versionCount++;
@@ -1663,6 +1695,7 @@ function markdownSourcePlugin(context, options = {}) {
               fileContent: raw,
               pluginContext,
               imageContext: imageContextFor(docsDir, docsPath.replace(/^\/+|\/+$/g, '')),
+              linkOptions: { directoryIndex: supportDirectoryIndex },
             });
             copiedCount++;
 
@@ -1770,6 +1803,7 @@ function markdownSourcePlugin(context, options = {}) {
               fileContent: raw,
               pluginContext: blogPluginContext,
               imageContext: imageContextFor(blogDir, routeBasePath),
+              linkOptions: { directoryIndex: supportDirectoryIndex },
             });
             blogCopied++;
             copiedCount++;

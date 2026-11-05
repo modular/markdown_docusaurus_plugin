@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relative images such as **`../images/gpu/x.png`** now resolve. They are rewritten to absolute URLs and the files are copied into the build (under the version prefix in **`includeAllDocVersions`** mode). Previously only **`img/`** folders were handled, so other relative images returned 404.
 - **`<img src={require(...)}>`** tags (including multi-line ones) and **`<figure>`** wrappers are converted to markdown images. For light/dark image pairs (**`#light`**/**`#dark`** or **`className="dark"`**), only the light image is kept.
 - **`<Link to|href>`** elements become markdown links instead of being dropped with their text.
+- **`fullyQualifiedLinks`** rewrites site-root doc links when docs are served from the site root (**`docsPath: '/'`**) and a **`blog`** is configured. Previously every site-root link outside the blog was left relative.
+- Links under a **`blog`** route base keep it (**`/releases/v26.7`** becomes **`/releases/v26.7.md`**, not **`/v26.7`**), and a dotted slug no longer counts as a file extension.
+- In **`includeAllDocVersions`** mode, a site-root file link such as **`/packages.mdx`** resolves within the page's own docs version (**`/stable/packages.md`**), as it does in the HTML. Links to **`index.mdx`** files point at the emitted directory page.
 - Shared **`_includes`** expand under the name the page imports them as (such as **`InstallMAX`**), not only **`InstallModular`**. Every page that imported the install include was missing its install steps.
 - Include templates render as Markdown numbered lists with their code blocks, tips, and links, instead of deeply indented JSX residue with **`{extraLibsDescription}`** and **`{' '}`** left in.
 - **`<DynamicCode>`** placeholders such as **`{text}`** are filled with the model that the page's **`<ModelSelector>`** selects by default, and the code keeps its list indentation and title.
