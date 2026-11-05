@@ -403,13 +403,15 @@ function transformOutsideCode(content, transform) {
 }
 
 // Emit a fence at `indent`, so a code block inside a list item stays inside it.
-// MDX strips the list container's indent from template literal lines, so up
-// to `indent.length` leading spaces are removed before re-indenting.
-function indentedFence(indent, opener, code) {
+// In an .mdx page, MDX strips the list container's indent from template
+// literal lines, so by default up to `indent.length` leading spaces are removed
+// before re-indenting. Include templates are JS components, where template
+// literals are taken verbatim, so they pass `stripContainerIndent: false`.
+function indentedFence(indent, opener, code, { stripContainerIndent = true } = {}) {
   const body = code
     .split('\n')
     .map((line, i) => {
-      if (i > 0) {
+      if (i > 0 && stripContainerIndent) {
         const lead = line.match(/^[ \t]*/)[0].length;
         line = line.slice(Math.min(lead, indent.length));
       }
@@ -420,7 +422,7 @@ function indentedFence(indent, opener, code) {
 }
 
 // Convert Docusaurus CodeBlock components to fenced code blocks
-function convertCodeBlockToMarkdown(content, substitutions = {}) {
+function convertCodeBlockToMarkdown(content, substitutions = {}, fenceOptions = {}) {
   content = content.replace(
     /^([ \t]*)<CodeBlock\s+language="([^"]+)"(?:\s+title="([^"]*)")?\s*>\s*\{`([\s\S]*?)`\}\s*<\/CodeBlock>/gm,
     (match, indent, language, title, code) => {
@@ -428,13 +430,13 @@ function convertCodeBlockToMarkdown(content, substitutions = {}) {
       const opener = title
         ? '```' + language + ' title="' + title + '"'
         : '```' + language;
-      return indentedFence(indent, opener, cleanCode);
+      return indentedFence(indent, opener, cleanCode, fenceOptions);
     }
   );
   return content.replace(
     /^([ \t]*)<CodeBlock\s+language="([^"]+)"[^>]*>\s*\n?\s*([^<{][\s\S]*?)\s*<\/CodeBlock>/gm,
     (match, indent, language, code) =>
-      indentedFence(indent, '```' + language, code.trim())
+      indentedFence(indent, '```' + language, code.trim(), fenceOptions)
   );
 }
 
@@ -505,20 +507,60 @@ function dedent(text) {
   return lines.map((line) => (line.trim().length ? line.slice(common) : '')).join('\n');
 }
 
-// Convert JSX <ol><li> lists to a Markdown numbered list.
+// Convert JSX <ol><li> lists to a Markdown numbered list. Text between items,
+// such as the `**Nightly:**` label ConditionalVersionDocs emits without an
+// active version, is kept at the start of the next item instead of dropped.
 function convertOrderedListsToMarkdown(content) {
   return content.replace(/<ol>([\s\S]*?)<\/ol>/g, (match, inner) => {
-    const items = [...inner.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((item, i) => {
-      const marker = `${i + 1}. `;
+    const items = [];
+    let pending = '';
+    let last = 0;
+    for (const item of inner.matchAll(/<li>([\s\S]*?)<\/li>/g)) {
+      const between = inner.slice(last, item.index).replace(/\s+/g, ' ').trim();
+      if (between) pending = pending ? `${pending} ${between}` : between;
+      last = item.index + item[0].length;
+      const marker = `${items.length + 1}. `;
       const pad = ' '.repeat(marker.length);
-      return dedent(item[1])
-        .replace(/^\n+|\s+$/g, '')
-        .split('\n')
-        .map((line, j) => (j === 0 ? marker + line : line ? pad + line : ''))
-        .join('\n');
-    });
-    return `\n${items.join('\n\n')}\n`;
+      const lines = dedent(item[1]).replace(/^\n+|\s+$/g, '').split('\n');
+      if (pending) {
+        lines[0] = `${pending} ${lines[0]}`;
+        pending = '';
+      }
+      items.push(
+        lines.map((line, j) => (j === 0 ? marker + line : line ? pad + line : '')).join('\n')
+      );
+    }
+    const trailing = [pending, inner.slice(last).replace(/\s+/g, ' ').trim()]
+      .filter(Boolean)
+      .join(' ');
+    return `\n${items.join('\n\n')}\n${trailing ? `\n${trailing}\n` : ''}`;
   });
+}
+
+// `<` and `>` inside fenced code are swapped for private-use characters while
+// an include's JSX is stripped, so code such as `<your-token>` survives the
+// tag-removal regexes. Line structure is untouched, so later dedenting and
+// list re-indentation still apply to the code.
+const MASKED_LT = '\uE001';
+const MASKED_GT = '\uE002';
+
+function maskCodeAngleBrackets(content) {
+  const { content: protectedContent, blocks } = protectFencedCodeBlocks(content);
+  const masked = blocks.map((block) => {
+    const lines = block.split('\n');
+    return lines
+      .map((line, i) =>
+        i === 0 || i === lines.length - 1
+          ? line
+          : line.replace(/</g, MASKED_LT).replace(/>/g, MASKED_GT)
+      )
+      .join('\n');
+  });
+  return restoreFencedCodeBlocks(protectedContent, masked);
+}
+
+function unmaskCodeAngleBrackets(content) {
+  return content.replace(/\uE001/g, '<').replace(/\uE002/g, '>');
 }
 
 function convertFigureToMarkdown(content) {
@@ -588,8 +630,6 @@ function extractIncludeComponentBody(includeContent) {
 
 function processIncludeTemplate(includeContent, substitutions, activeVersion) {
   let body = extractIncludeComponentBody(includeContent);
-  body = body.replace(/const tooltipNightly[\s\S]*?;\s*/g, '');
-  body = body.replace(/const tooltipStable[\s\S]*?;\s*/g, '');
   body = body.replace(/\(\{tooltipNightly\}\)/g, '(nightly)');
   body = body.replace(/\(\{tooltipStable\}\)/g, '(stable)');
   body = body.replace(/<Tooltip[\s\S]*?\/>/g, '');
@@ -598,7 +638,8 @@ function processIncludeTemplate(includeContent, substitutions, activeVersion) {
     body = body.replace(new RegExp(`\\$?\\{${key}\\}`, 'g'), value);
   }
   body = convertConditionalVersionDocsToMarkdown(body, activeVersion);
-  body = convertCodeBlockToMarkdown(body, substitutions);
+  body = convertCodeBlockToMarkdown(body, substitutions, { stripContainerIndent: false });
+  body = maskCodeAngleBrackets(body);
   body = convertAdmonitionToMarkdown(body);
   body = convertLinkComponentsToMarkdown(body);
   body = body.replace(/<a\s+href="([^"]+)"\s*><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
@@ -611,6 +652,7 @@ function processIncludeTemplate(includeContent, substitutions, activeVersion) {
   body = body.replace(/<\/?>/g, '');
   body = convertTabsToMarkdown(body);
   body = body.replace(/<[^>]+>/g, '');
+  body = unmaskCodeAngleBrackets(body);
   return collapseBlankLines(dedent(body)).trim();
 }
 
