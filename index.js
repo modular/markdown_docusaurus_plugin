@@ -591,13 +591,18 @@ function convertDetailsToMarkdown(content) {
   const detailsPattern = /<details>\s*<summary>(<strong>)?([^<]+)(<\/strong>)?<\/summary>([\s\S]*?)<\/details>/g;
 
   return content.replace(detailsPattern, (fullMatch, strongOpen, summaryText, strongClose, detailsContent) => {
-    // Clean up the details content
-    const cleanContent = detailsContent
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
+    // Remove only the indentation shared by every non-blank line, and keep
+    // blank lines. Trimming each line destroyed code indentation (invalid
+    // Mojo/Python), and dropping blank lines merged paragraphs and code.
+    const lines = detailsContent.split('\n');
+    const indents = lines
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.match(/^[ \t]*/)[0].length);
+    const commonIndent = indents.length > 0 ? Math.min(...indents) : 0;
+    const cleanContent = lines
+      .map((line) => (line.trim().length > 0 ? line.slice(commonIndent).trimEnd() : ''))
       .join('\n')
-      .trim();
+      .replace(/^\n+|\n+$/g, '');
 
     return `### ${summaryText.trim()}\n\n${cleanContent}`;
   });
@@ -1524,6 +1529,7 @@ module.exports._internals = {
   codeToken,
   transformOutsideCode,
   convertLinksToAbsoluteUrls,
+  convertDetailsToMarkdown,
   convertCodeBlockToMarkdown,
   convertConditionalVersionDocsToMarkdown,
   convertAdmonitionToMarkdown,
