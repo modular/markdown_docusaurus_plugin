@@ -240,26 +240,24 @@ test('converts HTML within Admonition content', () => {
   assert(!result.includes('<b>'));
 });
 
-test('blockquotes every line of multi-line Admonition content', () => {
-  const input = '<Admonition type="tip">\nLine one\nLine two\n</Admonition>';
+test('blockquotes multi-paragraph Admonition content', () => {
+  const input =
+    '<Admonition type="tip">\n<p>Line one\nwraps</p>\n<p>Line two</p>\n</Admonition>';
   const result = convertAdmonitionToMarkdown(input);
-  assert.strictEqual(
-    result,
-    '> **tip:** Line one\n> Line two\n'
-  );
+  assert.strictEqual(result, '> **tip:** Line one wraps\n>\n> Line two\n');
 });
 
-test('dedents indented JSX lines inside an Admonition', () => {
+test('joins indented JSX lines inside an Admonition into one paragraph', () => {
   const input =
     '<Admonition type="note">\n        <p>\n          First line\n          second line\n        </p>\n      </Admonition>';
   const result = convertAdmonitionToMarkdown(input);
-  assert.strictEqual(result, '> **note:** First line\n> second line\n');
+  assert.strictEqual(result, '> **note:** First line second line\n');
 });
 
 test('does not double the label when the Admonition starts with its own', () => {
   const input = '<Admonition type="tip"><p><b>Tip:</b> Do this.</p></Admonition>';
   const result = convertAdmonitionToMarkdown(input);
-  assert.strictEqual(result, '> **Tip:** Do this.\n');
+  assert.strictEqual(result, '> **tip:** Do this.\n');
 });
 
 test('leaves non-Admonition content unchanged', () => {
@@ -419,20 +417,20 @@ export default function InstallModular({ folder = "example-project", extraLibrar
 }
 `;
 
-test('expands a realistic include into valid, unindented Markdown', () => {
-  const ctx = { includeTemplates: { 'install-modular': realisticTemplate } };
+test('expands a realistic include into a Markdown list with nested fences', () => {
+  const ctx = {
+    includeTemplates: { 'install-modular': realisticTemplate },
+    activeVersion: 'nightly',
+  };
   const input = '<InstallModular folder="demo" extraLibraries={["torch"]} />';
   const result = convertInstallModularToMarkdown(input, ctx);
 
-  const indented = result.split('\n').filter((line) => /^ {4,}\S/.test(line));
-  assert.deepStrictEqual(indented, [], 'no line should read as an indented code block');
-
-  const fences = result.split('\n').filter((line) => line.startsWith('```'));
+  const fences = result.split('\n').filter((line) => /^ *```/.test(line));
   assert.strictEqual(fences.length % 2, 0, 'fences should pair up');
-  assert(fences.every((line) => !line.startsWith(' ')), 'fences start at column 0');
+  assert(fences.every((line) => line.startsWith('   ```')), 'fences nest in list items');
 
   assert(
-    result.includes('```sh\npixi init demo \\\n  -c conda-forge \\\n  && cd demo\n```'),
+    result.includes('   ```sh\n   pixi init demo \\\n     -c conda-forge \\\n     && cd demo\n   ```'),
     'template literal escapes are evaluated and relative indentation kept'
   );
   assert(result.includes('pixi add modular torch'), 'extraLibsString substituted');
@@ -440,14 +438,57 @@ test('expands a realistic include into valid, unindented Markdown', () => {
   assert(!/[{}]/.test(result.replace(/```[\s\S]*?```/g, '')), 'no JSX braces leak into prose');
   assert(!result.includes('<'), 'no tags or fragments remain');
   assert(
-    result.includes('> **Tip:**\n> You can skip the `-c` options'),
+    result.includes('> **tip:** You can skip the `-c` options'),
     'single admonition label'
   );
   assert(result.includes('[add these channels as defaults](/pixi#channels)'), 'link kept');
   assert(result.includes('1. Create a project:'), 'first item numbered');
   assert(result.includes('2. Install `modular` (nightly)'), 'nightly item numbered');
-  assert(result.includes('2. Install `modular` and other'), 'stable alternative shares the number');
+  assert(!result.includes('Install `modular` and other'), 'inactive stable branch dropped');
   assert(result.includes('3. Start the virtual environment:'), 'numbering continues');
+});
+
+test('keeps <placeholders> inside include code blocks', () => {
+  const template = [
+    'export default function Install() {',
+    '  return (',
+    '    <ol>',
+    '      <li>',
+    '        Log in:',
+    '        <CodeBlock language="sh">',
+    '          {`huggingface-cli login --token <your-token> > /dev/null`}',
+    '        </CodeBlock>',
+    '      </li>',
+    '    </ol>',
+    '  );',
+    '}',
+  ].join('\n');
+  const ctx = { includeTemplates: { 'install-modular': template }, activeVersion: 'nightly' };
+  const result = convertInstallModularToMarkdown('<InstallModular />', ctx);
+  assert(result.includes('login --token <your-token> > /dev/null'), result);
+  assert(result.startsWith('1. Log in:'), result);
+});
+
+test('keeps version labels on list items when no version is active', () => {
+  const template = [
+    'export default function Install() {',
+    '  return (',
+    '    <ol>',
+    '      <li>First</li>',
+    '      <ConditionalVersionDocs version="nightly">',
+    '        <li>Nightly step</li>',
+    '      </ConditionalVersionDocs>',
+    '      <ConditionalVersionDocs version="stable">',
+    '        <li>Stable step</li>',
+    '      </ConditionalVersionDocs>',
+    '    </ol>',
+    '  );',
+    '}',
+  ].join('\n');
+  const ctx = { includeTemplates: { 'install-modular': template } };
+  const result = convertInstallModularToMarkdown('<InstallModular />', ctx);
+  assert(result.includes('2. **Nightly:** Nightly step'), result);
+  assert(result.includes('3. **Stable:** Stable step'), result);
 });
 
 // ---------------------------------------------------------------------------

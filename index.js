@@ -15,11 +15,16 @@ function extractAttribute(tagString, attrName) {
 
 // Convert Tabs/TabItem components to readable markdown format
 // Handles both standard <Tabs> and custom tab components like <ModelDropdownTabs>
+// Each tab's content is re-indented to the <Tabs> tag's column, so tabs nested
+// in a list item stay in that item and their fences stay intact.
 function convertTabsToMarkdown(content) {
   // Match standard Tabs and any custom component ending in "Tabs"
-  const tabsPattern = /<(\w*Tabs)[^>]*>([\s\S]*?)<\/\1>/g;
+  // The body may not open another tabs element, so the innermost block
+  // matches first and its TabItems don't close the outer block's items.
+  const tabsPattern =
+    /^([ \t]*)<(\w*Tabs)\b[^>]*>((?:(?!<\w*Tabs\b)[\s\S])*?)<\/\2>/gm;
 
-  const processTabsBlock = (fullMatch, tagName, tabsContent) => {
+  const processTabsBlock = (fullMatch, indent, tagName, tabsContent) => {
     // Match TabItem with any attribute order by capturing the entire opening tag
     const tabItemPattern = /<TabItem\s+([^>]*)>([\s\S]*?)<\/TabItem>/g;
 
@@ -36,16 +41,19 @@ function convertTabsToMarkdown(content) {
       // Use label if available, otherwise fall back to value
       const displayLabel = label || value || 'Tab';
 
-      // Preserve the content as-is (don't strip indentation - it may be meaningful for lists)
-      const cleanContent = itemContent.trim();
+      const cleanContent = dedent(itemContent)
+        .replace(/^\n+|\s+$/g, '')
+        .split('\n')
+        .map((line) => (line ? indent + line : line))
+        .join('\n');
 
-      result.push(`**${displayLabel}:**\n\n${cleanContent}`);
+      result.push(`${indent}**${displayLabel}:**\n\n${cleanContent}`);
     }
 
-    return result.join('\n\n---\n\n');
+    return result.join(`\n\n${indent}---\n\n`);
   };
 
-  // Process repeatedly to handle nested tabs (innermost first)
+  // Process repeatedly, innermost first, to handle nested tabs
   let previousContent;
   let currentContent = content;
 
@@ -164,40 +172,70 @@ function convertExportsToMarkdown(content) {
   return content;
 }
 
-// Convert DynamicCode components to fenced code blocks
-function convertDynamicCodeToMarkdown(content) {
-  // Match <DynamicCode language="sh" ...>{`...`}</DynamicCode>
-  // Also capture any leading whitespace so we can remove it
-  return content.replace(
-    /^[ \t]*<DynamicCode\s+language="([^"]+)"[^>]*>([\s\S]*?)<\/DynamicCode>/gim,
-    (match, language, code) => {
-      // Clean up the code content:
-      // 1. Remove outer { and } (JSX expression wrapper)
-      // 2. Remove backticks (template literal)
-      // 3. Normalize indentation
-      let cleanCode = code.trim();
-
-      // Remove leading { and trailing }
-      cleanCode = cleanCode.replace(/^\s*\{\s*/, '').replace(/\s*\}\s*$/, '');
-
-      // Remove backticks (template literal delimiters)
-      cleanCode = cleanCode.replace(/^`/, '').replace(/`$/, '');
-
-      // Normalize indentation: find minimum indent and remove it from all lines
-      const lines = cleanCode.split('\n');
-      const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-      if (nonEmptyLines.length > 0) {
-        const minIndent = Math.min(...nonEmptyLines.map(line => {
-          const match = line.match(/^(\s*)/);
-          return match ? match[1].length : 0;
-        }));
-        if (minIndent > 0) {
-          cleanCode = lines.map(line => line.slice(minIndent)).join('\n');
+// Read the options of each `export const name = [{ value, default }, ...]`
+// array and each `export const name = { key: arrayName, ... }` map.
+function parseModelOptionExports(content) {
+  const arrays = {};
+  const maps = {};
+  const exportPattern = /^export\s+const\s+(\w+)\s*=\s*([[{])/gm;
+  let match;
+  while ((match = exportPattern.exec(content)) !== null) {
+    const start = match.index + match[0].length - 1;
+    const body = content.slice(start, findExportEnd(content, start));
+    if (match[2] === '[') {
+      const options = [];
+      for (const obj of body.match(/\{[^{}]*\}/g) || []) {
+        const value = obj.match(/\bvalue\s*:\s*['"]([^'"]+)['"]/);
+        if (value) {
+          options.push({ value: value[1], isDefault: /\bdefault\s*:\s*true\b/.test(obj) });
         }
       }
+      if (options.length) arrays[match[1]] = options;
+    } else {
+      const entries = {};
+      for (const [, key, ref] of body.matchAll(/(\w+)\s*:\s*(\w+)/g)) {
+        entries[key] = ref;
+      }
+      maps[match[1]] = entries;
+    }
+  }
+  return { arrays, maps };
+}
 
-      cleanCode = cleanCode.trim();
-      return '```' + language + '\n' + cleanCode + '\n```';
+// Map each ModelSelector variable to the model it selects on page load: the
+// option marked `default: true`, else the first option.
+function findModelSelectorDefaults(content) {
+  const { arrays, maps } = parseModelOptionExports(content);
+  const defaults = {};
+  for (const [tag] of content.matchAll(/<ModelSelector\b[^>]*?\/?>/g)) {
+    const optionsName = tag.match(/modelOptions=\{\s*(\w+)\s*\}/);
+    const variableName = extractAttribute(tag, 'variableName');
+    if (!optionsName || !variableName || defaults[variableName]) continue;
+    const name = optionsName[1];
+    const options = arrays[name] || arrays[maps[name]?.[variableName]];
+    if (!options) continue;
+    defaults[variableName] = (options.find((o) => o.isDefault) || options[0]).value;
+  }
+  return defaults;
+}
+
+// Convert DynamicCode components to fenced code blocks, filling each
+// `{variableName}` placeholder with the model the page selects by default.
+function convertDynamicCodeToMarkdown(content, modelDefaults = {}) {
+  return content.replace(
+    /^([ \t]*)<DynamicCode\s+([^>]*)>([\s\S]*?)<\/DynamicCode>/gm,
+    (match, indent, attrs, code) => {
+      const language = extractAttribute(attrs, 'language') || '';
+      const title = extractAttribute(attrs, 'title');
+      const variableName = extractAttribute(attrs, 'variableName') || 'MODEL';
+      const literal = code.match(/^\s*\{\s*`([\s\S]*)`\s*\}\s*$/);
+      let cleanCode = literal ? literal[1] : code.trim();
+      const model = modelDefaults[variableName];
+      if (model) {
+        cleanCode = cleanCode.split(`{${variableName}}`).join(model);
+      }
+      const opener = '```' + language + (title ? ` title="${title}"` : '');
+      return indentedFence(indent, opener, evaluateTemplateLiteral(cleanCode));
     }
   );
 }
@@ -365,13 +403,15 @@ function transformOutsideCode(content, transform) {
 }
 
 // Emit a fence at `indent`, so a code block inside a list item stays inside it.
-// MDX strips the list container's indent from template literal lines, so up
-// to `indent.length` leading spaces are removed before re-indenting.
-function indentedFence(indent, opener, code) {
+// In an .mdx page, MDX strips the list container's indent from template
+// literal lines, so by default up to `indent.length` leading spaces are removed
+// before re-indenting. Include templates are JS components, where template
+// literals are taken verbatim, so they pass `stripContainerIndent: false`.
+function indentedFence(indent, opener, code, { stripContainerIndent = true } = {}) {
   const body = code
     .split('\n')
     .map((line, i) => {
-      if (i > 0) {
+      if (i > 0 && stripContainerIndent) {
         const lead = line.match(/^[ \t]*/)[0].length;
         line = line.slice(Math.min(lead, indent.length));
       }
@@ -382,7 +422,7 @@ function indentedFence(indent, opener, code) {
 }
 
 // Convert Docusaurus CodeBlock components to fenced code blocks
-function convertCodeBlockToMarkdown(content, substitutions = {}) {
+function convertCodeBlockToMarkdown(content, substitutions = {}, fenceOptions = {}) {
   content = content.replace(
     /^([ \t]*)<CodeBlock\s+language="([^"]+)"(?:\s+title="([^"]*)")?\s*>\s*\{`([\s\S]*?)`\}\s*<\/CodeBlock>/gm,
     (match, indent, language, title, code) => {
@@ -390,13 +430,13 @@ function convertCodeBlockToMarkdown(content, substitutions = {}) {
       const opener = title
         ? '```' + language + ' title="' + title + '"'
         : '```' + language;
-      return indentedFence(indent, opener, cleanCode);
+      return indentedFence(indent, opener, cleanCode, fenceOptions);
     }
   );
   return content.replace(
     /^([ \t]*)<CodeBlock\s+language="([^"]+)"[^>]*>\s*\n?\s*([^<{][\s\S]*?)\s*<\/CodeBlock>/gm,
     (match, indent, language, code) =>
-      indentedFence(indent, '```' + language, code.trim())
+      indentedFence(indent, '```' + language, code.trim(), fenceOptions)
   );
 }
 
@@ -430,38 +470,97 @@ function convertLinkComponentsToMarkdown(content) {
   );
 }
 
+// Convert <Admonition> to a blockquote at the element's own indentation.
+// Each paragraph is joined onto one line, since JSX source wraps prose freely.
 function convertAdmonitionToMarkdown(content) {
   return content.replace(
-    /<Admonition\s+type="([^"]+)">\s*([\s\S]*?)<\/Admonition>/g,
-    (match, type, inner) => {
-      // Admonition children are JSX, where indentation carries no meaning.
-      // Keeping it would turn deeply nested lines into indented code blocks.
-      const cleanInner = inner
-        .replace(/<p>/g, '')
-        .replace(/<\/p>/g, '\n')
+    /^([ \t]*)<Admonition\s+type="([^"]+)">\s*([\s\S]*?)<\/Admonition>/gm,
+    (match, indent, type, inner) => {
+      const paragraphs = convertLinkComponentsToMarkdown(inner)
+        .replace(/\{' '\}/g, ' ')
+        .replace(/<\/p>/g, '\n\n')
         .replace(/<b>([^<]*)<\/b>/g, '**$1**')
         .replace(/<code>([^<]*)<\/code>/g, '`$1`')
         .replace(/<[^>]+>/g, '')
-        .split('\n')
-        .map((line) => line.trim())
-        .join('\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-      // Authors often open with their own bold label (`<b>Tip:</b>`); don't
-      // prepend a second one.
-      const hasOwnLabel = /^\*\*[^*\n]+:\*\*/.test(cleanInner);
-      const quoted = cleanInner
-        .split('\n')
-        .map((line, index) => {
-          if (index === 0 && !hasOwnLabel) {
-            return line.length ? `> **${type}:** ${line}` : `> **${type}:**`;
-          }
-          return line.length ? `> ${line}` : '>';
-        })
-        .join('\n');
-      return quoted + '\n';
+        .split(/\n[ \t]*\n/)
+        .map((para) => para.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      const label = `**${type}:**`;
+      if (paragraphs.length && paragraphs[0].toLowerCase().startsWith(label.toLowerCase())) {
+        paragraphs[0] = paragraphs[0].slice(label.length).trim();
+      }
+      const quoted = paragraphs
+        .map((para, index) => (index === 0 ? `> ${label} ${para}` : `> ${para}`))
+        .join(`\n${indent}>\n${indent}`);
+      return `${indent}${quoted || `> ${label}`}\n`;
     }
   );
+}
+
+// Remove the indentation shared by every non-blank line.
+function dedent(text) {
+  const lines = text.split('\n');
+  const indents = lines
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.match(/^[ \t]*/)[0].length);
+  const common = indents.length ? Math.min(...indents) : 0;
+  return lines.map((line) => (line.trim().length ? line.slice(common) : '')).join('\n');
+}
+
+// Convert JSX <ol><li> lists to a Markdown numbered list. Text between items,
+// such as the `**Nightly:**` label ConditionalVersionDocs emits without an
+// active version, is kept at the start of the next item instead of dropped.
+function convertOrderedListsToMarkdown(content) {
+  return content.replace(/<ol>([\s\S]*?)<\/ol>/g, (match, inner) => {
+    const items = [];
+    let pending = '';
+    let last = 0;
+    for (const item of inner.matchAll(/<li>([\s\S]*?)<\/li>/g)) {
+      const between = inner.slice(last, item.index).replace(/\s+/g, ' ').trim();
+      if (between) pending = pending ? `${pending} ${between}` : between;
+      last = item.index + item[0].length;
+      const marker = `${items.length + 1}. `;
+      const pad = ' '.repeat(marker.length);
+      const lines = dedent(item[1]).replace(/^\n+|\s+$/g, '').split('\n');
+      if (pending) {
+        lines[0] = `${pending} ${lines[0]}`;
+        pending = '';
+      }
+      items.push(
+        lines.map((line, j) => (j === 0 ? marker + line : line ? pad + line : '')).join('\n')
+      );
+    }
+    const trailing = [pending, inner.slice(last).replace(/\s+/g, ' ').trim()]
+      .filter(Boolean)
+      .join(' ');
+    return `\n${items.join('\n\n')}\n${trailing ? `\n${trailing}\n` : ''}`;
+  });
+}
+
+// `<` and `>` inside fenced code are swapped for private-use characters while
+// an include's JSX is stripped, so code such as `<your-token>` survives the
+// tag-removal regexes. Line structure is untouched, so later dedenting and
+// list re-indentation still apply to the code.
+const MASKED_LT = '\uE001';
+const MASKED_GT = '\uE002';
+
+function maskCodeAngleBrackets(content) {
+  const { content: protectedContent, blocks } = protectFencedCodeBlocks(content);
+  const masked = blocks.map((block) => {
+    const lines = block.split('\n');
+    return lines
+      .map((line, i) =>
+        i === 0 || i === lines.length - 1
+          ? line
+          : line.replace(/</g, MASKED_LT).replace(/>/g, MASKED_GT)
+      )
+      .join('\n');
+  });
+  return restoreFencedCodeBlocks(protectedContent, masked);
+}
+
+function unmaskCodeAngleBrackets(content) {
+  return content.replace(/\uE001/g, '<').replace(/\uE002/g, '>');
 }
 
 function convertFigureToMarkdown(content) {
@@ -529,81 +628,59 @@ function extractIncludeComponentBody(includeContent) {
   return returnMatch ? returnMatch[1] : body;
 }
 
-// Replace each <li> in an <ol> with an explicit `N. ` marker. Expanded list
-// items contain fenced code at column 0, which ends a Markdown list, so
-// relying on auto-numbering would restart every item at 1. Adjacent
-// ConditionalVersionDocs blocks are alternatives (only one renders in HTML),
-// so the second block reuses the first block's numbering.
-function numberOrderedListItems(body) {
-  return body.replace(/<ol>([\s\S]*?)<\/ol>/g, (match, items) => {
-    let itemNumber = 0;
-    let groupStartNumber = 0;
-    let lastGroupEnd = -1;
-    return items.replace(
-      /<li>\s*|<ConditionalVersionDocs\b[^>]*>|<\/ConditionalVersionDocs>/g,
-      (tag, offset) => {
-        if (tag.startsWith('<li>')) return `${++itemNumber}. `;
-        if (tag.startsWith('</')) {
-          lastGroupEnd = offset + tag.length;
-          return tag;
-        }
-        const isAlternative =
-          lastGroupEnd >= 0 && items.slice(lastGroupEnd, offset).trim() === '';
-        if (isAlternative) {
-          itemNumber = groupStartNumber;
-        } else {
-          groupStartNumber = itemNumber;
-        }
-        return tag;
-      }
-    );
-  });
-}
-
 function processIncludeTemplate(includeContent, substitutions, activeVersion) {
   let body = extractIncludeComponentBody(includeContent);
   body = body.replace(/\(\{tooltipNightly\}\)/g, '(nightly)');
   body = body.replace(/\(\{tooltipStable\}\)/g, '(stable)');
   body = body.replace(/<Tooltip[\s\S]*?\/>/g, '');
-  body = body.replace(/<\/?>/g, '');
-  body = body.replace(/\{(['"])(\s*)\1\}/g, '$2');
-  body = numberOrderedListItems(body);
-
-  // Start each fence at column 0. The JSX indentation in front of <CodeBlock>
-  // is meaningless, and in Markdown it would turn the fence opener into an
-  // indented code block that no longer pairs with its closer.
-  body = body.replace(/^[ \t]+(?=<CodeBlock\b)/gm, '');
-  body = convertCodeBlockToMarkdown(body, substitutions);
-
-  const { content: protectedBody, blocks } = protectFencedCodeBlocks(body);
-  body = protectedBody;
-  body = body.replace(/\{(\w+)\}/g, (match, name) =>
-    Object.prototype.hasOwnProperty.call(substitutions, name)
-      ? String(substitutions[name])
-      : match
-  );
+  for (const [key, value] of Object.entries(substitutions)) {
+    // `${key}` inside template literals and `{key}` in JSX text.
+    body = body.replace(new RegExp(`\\$?\\{${key}\\}`, 'g'), value);
+  }
   body = convertConditionalVersionDocsToMarkdown(body, activeVersion);
-  body = convertLinkComponentsToMarkdown(body);
-  body = body.replace(/<a\s+href="([^"]+)"><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
+  body = convertCodeBlockToMarkdown(body, substitutions, { stripContainerIndent: false });
+  body = maskCodeAngleBrackets(body);
   body = convertAdmonitionToMarkdown(body);
-  body = removeDivTags(body);
-  body = convertTabsToMarkdown(body);
+  body = convertLinkComponentsToMarkdown(body);
+  body = body.replace(/<a\s+href="([^"]+)"\s*><code>([^<]*)<\/code><\/a>/g, '[`$2`]($1)');
+  body = body.replace(/\{' '\}/g, ' ');
+  body = body.replace(/^([ \t]*)<p>([\s\S]*?)<\/p>/gm, '\n$1$2\n');
   body = body.replace(/<code>([^<]*)<\/code>/g, '`$1`');
   body = body.replace(/<b>([^<]*)<\/b>/g, '**$1**');
+  body = convertOrderedListsToMarkdown(body);
+  body = removeDivTags(body);
+  body = body.replace(/<\/?>/g, '');
+  body = convertTabsToMarkdown(body);
   body = body.replace(/<[^>]+>/g, '');
-  // Same reason as for the fences: outside code, JSX indentation would read
-  // as Markdown indented code blocks.
-  body = body.replace(/^[ \t]+|[ \t]+$/gm, '');
-  body = restoreFencedCodeBlocks(body, blocks);
-  return body.trim();
+  body = unmaskCodeAngleBrackets(body);
+  return collapseBlankLines(dedent(body)).trim();
 }
 
-function convertInstallModularToMarkdown(content, pluginContext) {
+// Map each shared include to the component names a page imports it as, for
+// example `import InstallMAX from '../_includes/install-modular.mdx'`.
+function findIncludeComponentNames(content) {
+  const names = {
+    'install-modular': ['InstallModular'],
+    'install-openai': ['InstallOpenAI'],
+  };
+  const importPattern =
+    /^import\s+(\w+)\s+from\s+['"][^'"]*\/_includes\/([\w-]+?)(?:\.mdx?)?['"]/gm;
+  for (const [, name, key] of content.matchAll(importPattern)) {
+    if (names[key] && !names[key].includes(name)) names[key].push(name);
+  }
+  return names;
+}
+
+function includeTagPattern(names) {
+  return new RegExp(`<(?:${names.join('|')})\\b([^>]*?)\\/>`, 'g');
+}
+
+function convertInstallModularToMarkdown(content, pluginContext, names = ['InstallModular']) {
   if (!pluginContext) return content;
   const includeTemplate = pluginContext.includeTemplates?.['install-modular'];
   if (!includeTemplate) return content;
 
-  return content.replace(/<InstallModular\b[^>]*?\/>/gi, (match) => {
+  return content.replace(includeTagPattern(names), (match) => {
     const folder = extractAttribute(match, 'folder') || 'example-project';
     const extraMatch = match.match(/extraLibraries=\{(\[[^\]]*\])\}/);
     let extraLibs = [];
@@ -625,12 +702,12 @@ function convertInstallModularToMarkdown(content, pluginContext) {
   });
 }
 
-function convertInstallOpenAIToMarkdown(content, pluginContext) {
+function convertInstallOpenAIToMarkdown(content, pluginContext, names = ['InstallOpenAI']) {
   if (!pluginContext) return content;
   const includeTemplate = pluginContext.includeTemplates?.['install-openai'];
   if (!includeTemplate) return content;
 
-  return content.replace(/<InstallOpenAI\s*\/>/gi, () =>
+  return content.replace(includeTagPattern(names), () =>
     processIncludeTemplate(includeTemplate, {}, pluginContext.activeVersion)
   );
 }
@@ -734,6 +811,10 @@ function cleanMarkdownForDisplay(
   // 1. Strip YAML front matter (--- at start, content, then ---)
   content = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
 
+  // Read import names and model defaults before imports and exports go.
+  const includeNames = findIncludeComponentNames(content);
+  const modelDefaults = findModelSelectorDefaults(content);
+
   // 2. Remove import statements (MDX imports)
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
@@ -741,7 +822,7 @@ function cleanMarkdownForDisplay(
   content = removeMdxComments(content);
 
   // 4. Convert DynamicCode components to fenced code blocks
-  content = convertDynamicCodeToMarkdown(content);
+  content = convertDynamicCodeToMarkdown(content, modelDefaults);
 
   // 4. Convert JavaScript export arrays to readable bullet lists
   content = convertExportsToMarkdown(content);
@@ -753,8 +834,16 @@ function cleanMarkdownForDisplay(
   content = convertRequirementsToMarkdown(content);
 
   // Expand shared MDX includes into markdown (improves .md/HTML parity for agents)
-  content = convertInstallModularToMarkdown(content, pluginContext);
-  content = convertInstallOpenAIToMarkdown(content, pluginContext);
+  content = convertInstallModularToMarkdown(
+    content,
+    pluginContext,
+    includeNames['install-modular']
+  );
+  content = convertInstallOpenAIToMarkdown(
+    content,
+    pluginContext,
+    includeNames['install-openai']
+  );
   content = convertConditionalVersionDocsToMarkdown(
     content,
     pluginContext?.activeVersion
@@ -1733,5 +1822,9 @@ module.exports._internals = {
   convertFigureToMarkdown,
   convertInstallModularToMarkdown,
   convertInstallOpenAIToMarkdown,
+  convertDynamicCodeToMarkdown,
+  findIncludeComponentNames,
+  findModelSelectorDefaults,
+  convertTabsToMarkdown,
   unwrapMdxComponents,
 };
