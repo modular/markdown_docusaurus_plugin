@@ -1289,7 +1289,20 @@ function resolveMarkdownSource(value, siteDir, label) {
     );
   }
   assertSafeRelativePath(value, label && `markdown_source of ${label}`);
-  return path.join(siteDir, value);
+  const absPath = path.join(siteDir, value);
+  // The lexical check above doesn't see symlinks: a link inside the site can
+  // point anywhere. Require the real file to stay under the real site dir.
+  // A missing file passes here and fails later with "not found".
+  if (fs.existsSync(absPath)) {
+    const realRel = path.relative(fs.realpathSync(siteDir), fs.realpathSync(absPath));
+    if (realRel === '' || realRel.startsWith('..') || path.isAbsolute(realRel)) {
+      throw new Error(
+        `markdown_source${label ? ` for ${label}` : ''} resolves outside the site ` +
+          `directory: ${value}`
+      );
+    }
+  }
+  return absPath;
 }
 
 /** Resolves slug exactly like blog posts: front matter wins, else filename rules. */

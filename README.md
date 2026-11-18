@@ -216,7 +216,7 @@ markdown_source: generated/create-chat-completion.md
 
 The value is a path relative to the site directory (the one holding
 `docusaurus.config.js`); absolute paths and paths containing `..` are
-rejected. Keep the file outside your docs and static directories, so that it
+rejected, as are symlinks that resolve to a file outside the site directory. Keep the file outside your docs and static directories, so that it
 isn't also built as a doc page or served on its own.
 
 The plugin emits that file as the page's `.md` instead of the cleaned page

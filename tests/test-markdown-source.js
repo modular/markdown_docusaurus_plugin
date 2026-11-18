@@ -73,6 +73,38 @@ async function main() {
     assert.throws(() => resolveMarkdownSource(42, '/site'), /path string/);
   });
 
+  await test('rejects a symlink that resolves outside the site directory', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'md-source-link-'));
+    try {
+      const siteDir = path.join(root, 'site');
+      const outside = path.join(root, 'secret.md');
+      await fs.outputFile(outside, 'secret');
+      await fs.outputFile(path.join(siteDir, 'generated', 'inside.md'), '# Inside');
+      await fs.ensureSymlink(outside, path.join(siteDir, 'generated', 'file-link.md'));
+      await fs.ensureSymlink(root, path.join(siteDir, 'dir-link'));
+      await fs.ensureSymlink(
+        path.join(siteDir, 'generated', 'inside.md'),
+        path.join(siteDir, 'generated', 'internal-link.md')
+      );
+
+      assert.throws(
+        () => resolveMarkdownSource('generated/file-link.md', siteDir),
+        /outside the site directory/
+      );
+      assert.throws(
+        () => resolveMarkdownSource('dir-link/secret.md', siteDir),
+        /outside the site directory/
+      );
+      // A link that stays inside the site is fine.
+      assert.strictEqual(
+        resolveMarkdownSource('generated/internal-link.md', siteDir),
+        path.join(siteDir, 'generated', 'internal-link.md')
+      );
+    } finally {
+      await fs.remove(root);
+    }
+  });
+
   console.log('\nwriteProcessedMarkdownToBuild with markdownSource:');
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'md-source-'));
