@@ -28,6 +28,8 @@ Here are some of the things we added/changed:
     as a CSS selector (default is the page header)
   - Specify the button text
   - Specify the button/widget icons
+- Adds `markdown_source` front matter, so a page whose body renders
+  client-side can supply its own `.md` content
 - Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
   currently not supported)
 
@@ -196,6 +198,35 @@ Each entry:
   source folder (unusual).
 - **`exclude`** — optional basenames or relative paths to skip (for example
   `archive.md`).
+
+### `markdown_source` — supply a page's markdown
+
+Some pages have no useful markdown source because their body is rendered
+client-side from data, such as an OpenAPI reference page that mounts an API
+renderer. Their `.md` would hold only the title. To give such a page real
+markdown, generate a markdown file for it before the build and name that file
+in the page's front matter:
+
+```yaml
+---
+title: Create chat completion
+markdown_source: generated/create-chat-completion.md
+---
+```
+
+The value is a path relative to the site directory (the one holding
+`docusaurus.config.js`); absolute paths and paths containing `..` are
+rejected, as are symlinks that resolve to a file outside the site directory. Keep the file outside your docs and static directories, so that it
+isn't also built as a doc page or served on its own.
+
+The plugin emits that file as the page's `.md` instead of the cleaned page
+source. Write it as plain markdown with its own H1: the plugin skips MDX
+cleanup and image handling for it, but still prepends the `directive` and
+applies `fullyQualifiedLinks`. Relative links resolve against the page's URL,
+not the file's location, so prefer site-root links.
+
+`markdown_source` applies to docs pages only, not blog posts. If the file is
+missing, the build logs an error and writes no `.md` for that page.
 
 ### Fully-qualified links
 

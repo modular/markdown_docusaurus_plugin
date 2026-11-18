@@ -1252,21 +1252,57 @@ function parseBlogFileName(blogSourceRelative) {
 }
 
 /** Optional YAML `slug:` override — same source as plugin-content-blog. */
-function parseSlugFromFrontmatter(content) {
+// Reads a string value from raw YAML front matter without a YAML parser:
+// `key: value`, optionally quoted. Returns undefined when absent or empty.
+function parseFrontmatterString(content, key) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return undefined;
-  const yaml = match[1];
-  const slugMatch = yaml.match(/^\s*slug:\s*(.+)$/m);
-  if (!slugMatch) return undefined;
-  let raw = slugMatch[1].trim();
+  // `[ \t]`, not `\s`: an empty value must not pick up the next line.
+  const valueMatch = match[1].match(new RegExp(`^[ \\t]*${key}:[ \\t]*(.+)$`, 'm'));
+  if (!valueMatch) return undefined;
+  let raw = valueMatch[1].trim();
   if (
     (raw.startsWith('"') && raw.endsWith('"')) ||
     (raw.startsWith("'") && raw.endsWith("'"))
   ) {
     raw = raw.slice(1, -1).trim();
   }
-  if (!raw) return undefined;
-  return raw;
+  return raw || undefined;
+}
+
+function parseSlugFromFrontmatter(content) {
+  return parseFrontmatterString(content, 'slug');
+}
+
+/**
+ * Resolves a doc's `markdown_source` front matter to a file, or returns null
+ * when the doc sets none. The value is a path relative to the site directory
+ * (the one holding `docusaurus.config.js`), such as
+ * `generated/create-response.md`.
+ */
+function resolveMarkdownSource(value, siteDir, label) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new Error(
+      `markdown_source${label ? ` for ${label}` : ''} must be a path string, ` +
+        `got ${JSON.stringify(value)}`
+    );
+  }
+  assertSafeRelativePath(value, label && `markdown_source of ${label}`);
+  const absPath = path.join(siteDir, value);
+  // The lexical check above doesn't see symlinks: a link inside the site can
+  // point anywhere. Require the real file to stay under the real site dir.
+  // A missing file passes here and fails later with "not found".
+  if (fs.existsSync(absPath)) {
+    const realRel = path.relative(fs.realpathSync(siteDir), fs.realpathSync(absPath));
+    if (realRel === '' || realRel.startsWith('..') || path.isAbsolute(realRel)) {
+      throw new Error(
+        `markdown_source${label ? ` for ${label}` : ''} resolves outside the site ` +
+          `directory: ${value}`
+      );
+    }
+  }
+  return absPath;
 }
 
 /** Resolves slug exactly like blog posts: front matter wins, else filename rules. */
@@ -1399,20 +1435,31 @@ async function writeProcessedMarkdownToBuild({
   pluginContext,
   imageContext,
   linkOptions,
+  markdownSource,
 }) {
   await fs.ensureDir(path.dirname(destPath));
-  const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
-  let cleanedContent = cleanMarkdownForDisplay(
-    content,
-    mdFileRelativeForCleaning,
-    docsPath,
-    assetBasePath,
-    pluginContext
-  );
+  let cleanedContent;
+  if (markdownSource) {
+    // A `markdown_source` file is plain markdown written to be the page's
+    // `.md`, title included, so it skips MDX cleanup and image handling.
+    if (!(await fs.pathExists(markdownSource))) {
+      throw new Error(`markdown_source file not found: ${markdownSource}`);
+    }
+    cleanedContent = (await fs.readFile(markdownSource, 'utf8')).replace(/^\s*\n/, '');
+  } else {
+    const content = fileContent ?? (await fs.readFile(sourcePath, 'utf8'));
+    cleanedContent = cleanMarkdownForDisplay(
+      content,
+      mdFileRelativeForCleaning,
+      docsPath,
+      assetBasePath,
+      pluginContext
+    );
+  }
   if (directive) {
     cleanedContent = directive + '\n\n' + cleanedContent;
   }
-  if (imageContext) {
+  if (imageContext && !markdownSource) {
     const { content: withImages, files } = resolveImagePaths(cleanedContent, {
       sourceDir: path.dirname(sourcePath),
       contentRoot: imageContext.contentRoot,
@@ -1723,6 +1770,11 @@ function markdownSourcePlugin(context, options = {}) {
                   versionPrefix: prefix ? `/${prefix}` : '',
                   directoryIndex: supportDirectoryIndex,
                 },
+                markdownSource: resolveMarkdownSource(
+                  doc.frontMatter && doc.frontMatter.markdown_source,
+                  context.siteDir,
+                  doc.permalink
+                ),
               });
               copiedCount++;
               versionCount++;
@@ -1798,6 +1850,11 @@ function markdownSourcePlugin(context, options = {}) {
               pluginContext,
               imageContext: imageContextFor(docsDir, docsPath.replace(/^\/+|\/+$/g, '')),
               linkOptions: { directoryIndex: supportDirectoryIndex },
+              markdownSource: resolveMarkdownSource(
+                parseFrontmatterString(raw, 'markdown_source'),
+                context.siteDir,
+                mdFile
+              ),
             });
             copiedCount++;
 
@@ -1938,6 +1995,9 @@ function markdownSourcePlugin(context, options = {}) {
 module.exports = markdownSourcePlugin;
 
 module.exports._internals = {
+  parseFrontmatterString,
+  resolveMarkdownSource,
+  writeProcessedMarkdownToBuild,
   cleanMarkdownForDisplay,
   protectFencedCodeBlocks,
   restoreFencedCodeBlocks,
