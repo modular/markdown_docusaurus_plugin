@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`markdown_source`** front matter names a file, by path relative to the site directory (for example **`generated/create-chat-completion.md`**), to emit as the page's **`.md`** in place of its cleaned source. Pages whose body renders client-side, such as OpenAPI reference pages, can use it to serve real markdown instead of only a title. Docs pages only.
+
 ### Fixed
 
+- An empty **`slug:`** in front matter no longer reads the next line's value as the slug.
 - **`<ListingCards>`** grids become a Markdown list with one **`- [title](url): description`** item per **`<ListingCard />`**. Previously the cards were dropped and a stray **`</ListingCards>`** tag was left in the output.
 
 ## [2.2.0] - 2026-11-04
