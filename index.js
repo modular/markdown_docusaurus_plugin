@@ -820,6 +820,58 @@ function convertListingCardsToMarkdown(content) {
   );
 }
 
+// Convert cheat sheet components (<Sheet>, <Panel>, <Intro>, <Yes>, <No>,
+// <Partial>) to Markdown. The generic JSX stripper can't handle them: its lazy
+// match runs from <Sheet> to the first </Panel> and drops every panel, which
+// empties the page.
+// - <Sheet> is a wrapper; the page title already comes from front matter.
+// - <Panel title summary source> becomes an H3 (the HTML renders an <h3>),
+//   followed by the summary and source as text. Its children are kept.
+// - <Intro> is unwrapped into a paragraph.
+// - <Yes>/<No> render "yes"/"no" plus any children; <Partial> renders its
+//   children, or "partial" when empty.
+function convertCheatSheetsToMarkdown(content) {
+  const attrs = `((?:"[^"]*"|'[^']*'|[^"'>])*?)`;
+  const selfClosing = (name) => new RegExp(`<${name}\\b${attrs}\\/>`, 'g');
+  const paired = (name) =>
+    new RegExp(`<${name}\\b${attrs}>([\\s\\S]*?)<\\/${name}>`, 'g');
+  const withChildren = (word, children) => {
+    const text = children.trim();
+    return text ? `${word} ${text}` : word;
+  };
+
+  return content
+    .replace(new RegExp(`^[ \\t]*<\\/?Sheet\\b${attrs}>[ \\t]*$`, 'gm'), '')
+    .replace(
+      new RegExp(`^([ \\t]*)<Panel\\b${attrs}>[ \\t]*$`, 'gm'),
+      (match, indent, attrText) => {
+        const { title = '', summary = '', source = '' } =
+          parseJsxStringAttributes(attrText);
+        const lines = [`${indent}### ${title.trim()}`];
+        if (summary.trim()) lines.push('', `${indent}${summary.trim()}`);
+        if (source.trim()) {
+          lines.push('', `${indent}Source: \`${source.trim()}\``);
+        }
+        return lines.join('\n');
+      }
+    )
+    .replace(/^[ \t]*<\/Panel>[ \t]*$/gm, '')
+    .replace(paired('Intro'), (match, attrText, children) => children.trim())
+    .replace(selfClosing('Yes'), 'yes')
+    .replace(selfClosing('No'), 'no')
+    .replace(selfClosing('Partial'), 'partial')
+    .replace(paired('Yes'), (match, attrText, children) =>
+      withChildren('yes', children)
+    )
+    .replace(paired('No'), (match, attrText, children) =>
+      withChildren('no', children)
+    )
+    .replace(
+      paired('Partial'),
+      (match, attrText, children) => children.trim() || 'partial'
+    );
+}
+
 // Extract title from YAML frontmatter
 function extractTitleFromFrontmatter(content) {
   const frontmatterMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -858,7 +910,12 @@ function cleanMarkdownForDisplay(
   const includeNames = findIncludeComponentNames(content);
   const modelDefaults = findModelSelectorDefaults(content);
 
-  // 2. Remove import statements (MDX imports)
+  // 2. Remove import statements (MDX imports). The first pattern catches
+  // named imports split across lines: `import {\n  Sheet,\n  Panel,\n} from '...';`
+  content = content.replace(
+    /^import\s+(?:[\w$]+\s*,\s*)?\{[^}]*\}\s*from\s+['"][^'"]*['"];?[ \t]*$/gm,
+    ''
+  );
   content = content.replace(/^import\s+.*?from\s+['"].*?['"];?\s*$/gm, '');
 
   // 3. Remove MDX/JSX comments {/* ... */}
@@ -954,6 +1011,7 @@ function cleanMarkdownForDisplay(
     convertImagesToMarkdown(convertFigureToMarkdown(text))
   );
   content = transformOutsideCode(content, convertListingCardsToMarkdown);
+  content = transformOutsideCode(content, convertCheatSheetsToMarkdown);
 
   // 9. Remove custom React/MDX components (FAQStructuredData, etc.)
   // Matches both self-closing and paired tags: <Component ... /> or <Component ...>...</Component>
@@ -1891,6 +1949,7 @@ module.exports._internals = {
   convertLinksToAbsoluteUrls,
   convertDetailsToMarkdown,
   convertListingCardsToMarkdown,
+  convertCheatSheetsToMarkdown,
   stripHighlightDirectives,
   convertImagesToMarkdown,
   resolveImagePaths,
