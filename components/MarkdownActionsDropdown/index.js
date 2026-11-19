@@ -152,6 +152,15 @@ export default function MarkdownActionsDropdown({
   };
 
   const handleMenuKeyDown = (event) => {
+    // Menu items activate on Space as well as Enter. Buttons do that natively;
+    // links would scroll the page instead, so click them explicitly.
+    const link = event.key === ' ' && event.target.closest?.('a[role="menuitem"]');
+    if (link) {
+      event.preventDefault();
+      link.click();
+      return;
+    }
+
     const items = menuItems();
     const index = items.indexOf(document.activeElement);
     let next = null;
