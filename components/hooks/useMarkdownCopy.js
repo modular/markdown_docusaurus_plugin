@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getMarkdownUrl } from '../../lib/markdown-path';
 
 /**
  * Custom hook for markdown copy functionality
@@ -24,15 +25,7 @@ export default function useMarkdownCopy(docsPath = '/docs/', supportDirectoryInd
   const isDocsPage = currentPath.startsWith(docsPath);
 
   // Construct the .md URL from the current path
-  let markdownUrl;
-  if (!currentPath.endsWith('/')) {
-    markdownUrl = `${currentPath}.md`;
-  } else if (supportDirectoryIndex) {
-    markdownUrl = `${currentPath}intro.md`;
-  } else {
-    const trimmed = currentPath.slice(0, -1);
-    markdownUrl = trimmed ? `${trimmed}.md` : '/index.md';
-  }
+  const markdownUrl = getMarkdownUrl(currentPath, { supportDirectoryIndex });
 
   /**
    * Copy markdown content to clipboard
