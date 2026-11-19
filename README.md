@@ -30,6 +30,10 @@ Here are some of the things we added/changed:
   - Specify the button/widget icons
 - Adds `markdown_source` front matter, so a page whose body renders
   client-side can supply its own `.md` content
+- Ports upstream's `aiProviders` / `aiPrompt` options ("Open in ChatGPT",
+  "Open in Claude", and so on) into a reworked drop-down widget that sites
+  can restyle and render themselves, with an optional `description` per
+  provider (see [AI assistant links](#ai-assistant-links-aiproviders-aiprompt))
 - Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
   currently not supported)
 
@@ -106,6 +110,16 @@ module.exports = {
 
       // Label shown after a successful copy (default: 'Copied')
       copiedButtonText: 'Copied',
+
+      // "Open in …" rows in the drop-down widget: built-in ids
+      // ('chatgpt', 'claude', 'gemini', 'perplexity', 'grok') and/or custom
+      // { label, url, description?, context? } entries, or false for none.
+      // (default: all five built-ins)
+      aiProviders: ['chatgpt', 'claude'],
+
+      // Prompt sent to the assistant; must contain {url}.
+      // (default: 'Read from {url} so I can ask questions about it.')
+      aiPrompt: 'Read from {url} so I can ask questions about it.',
 
       // When true, trailing-slash URLs fetch intro.md
       // (e.g., /foo/ -> /foo/intro.md). When false, the trailing slash
@@ -351,6 +365,91 @@ here too.
 
 When `htmlDirective` is not configured, nothing is injected.
 
+### AI assistant links (`aiProviders`, `aiPrompt`)
+
+The drop-down widget can list "Open in …" rows that open an AI assistant with
+a prompt pointing at the current page. These options and the provider table
+are ported from
+[upstream](https://github.com/FlyNumber/markdown_docusaurus_plugin), and
+both options are validated at build time, so a typo fails `docusaurus build`.
+
+Built-in providers:
+
+| id           | Opens                                   | `{url}` in the prompt |
+| ------------ | --------------------------------------- | --------------------- |
+| `chatgpt`    | `https://chatgpt.com/?hints=search&q=…` | the page's `.md` URL  |
+| `claude`     | `https://claude.ai/new?q=…`             | the page's `.md` URL  |
+| `gemini`     | `https://www.google.com/search?udm=50&q=…` (Google AI Mode) | the HTML page URL |
+| `perplexity` | `https://www.perplexity.ai/search/new?q=…` | the HTML page URL  |
+| `grok`       | `https://grok.com/?q=…`                 | the HTML page URL     |
+
+ChatGPT and Claude fetch the URL they're given, so they get the clean `.md`
+file. The others answer from a search index, which doesn't hold the `.md`
+files, so they get the HTML page. Each built-in row shows the description
+"Ask questions about this page".
+
+`aiProviders` takes built-in ids in the order you want them, custom entries,
+or `false` for none:
+
+```javascript
+aiProviders: [
+  'claude',
+  'chatgpt',
+  {
+    label: 'Open in Mistral',
+    description: 'Chat about this page', // optional (fork addition)
+    url: 'https://chat.mistral.ai/chat?q={prompt}', // must contain {prompt}
+    context: 'page', // optional: 'page' (default) or 'markdown'
+  },
+],
+```
+
+The rows appear in the drop-down widget only. `MarkdownCopyButton` ignores
+these options.
+
+### Render the widget yourself
+
+Instead of letting the plugin inject the widget with `containerSelector`, you
+can import a component and render it in a swizzled theme component. Set
+`containerSelector` to a selector that matches nothing (such as
+`'#no-inject'`) so the plugin doesn't also inject one.
+
+```tsx
+import { usePluginData } from '@docusaurus/useGlobalData';
+import MarkdownCopyButton from 'docusaurus-markdown-source-plugin/components/MarkdownCopyButton';
+import MarkdownActionsDropdown from 'docusaurus-markdown-source-plugin/components/MarkdownActionsDropdown';
+
+// A single copy button:
+<MarkdownCopyButton docsPath="/" copyButtonText="Copy as Markdown" copiedButtonText="Copied!" />
+
+// The drop-down, with the AI rows from your plugin config:
+const { aiProviders, aiPrompt } = usePluginData('markdown-source-plugin');
+<MarkdownActionsDropdown
+  docsPath="/"
+  buttonText="Copy page"              // trigger label (default: 'Copy page')
+  copiedButtonText="Copied!"          // copy row title after copying (default: 'Copied')
+  actions={['copy', 'view']}          // markdown rows, in order (default: ['view', 'copy'])
+  labels={{ view: { description: 'Open the raw .md file' } }} // per-row title/description overrides
+  aiProviders={aiProviders}           // default: none when rendered directly
+  aiPrompt={aiPrompt}
+  triggerClassName=""                 // default: Infima 'button button--secondary button--sm'
+/>
+```
+
+The drop-down's elements have these classes for styling:
+
+| Class | Element |
+| ----- | ------- |
+| `.markdown-actions-dropdown` | Root (also Infima's `.dropdown`; `--open` while open) |
+| `.markdown-actions-dropdown__trigger` | The button that opens the menu |
+| `.markdown-actions-dropdown__label`, `__chevron` | Trigger label and chevron |
+| `.markdown-actions-dropdown__menu` | The menu list (also Infima's `.dropdown__menu`) |
+| `.markdown-actions-dropdown__item` | Each row; `--copy`, `--view`, `--ai` and `--<provider id>` modifiers; `--copied` / `--error` on the copy row |
+| `.markdown-actions-dropdown__icon` | Icon slot in the trigger and each row |
+| `.markdown-actions-dropdown__title`, `__description` | Row text lines |
+| `.markdown-actions-dropdown__external` | External-link indicator on AI rows |
+| `.markdown-actions-dropdown__separator` | Divider between markdown rows and AI rows |
+
 ### Custom icons
 
 The plugin uses theme components for icons, which can be overridden in your
@@ -381,6 +480,14 @@ export default function MarkdownCheckIcon({ size = 16, style }) {
   return <IconSuccess style={{ width: size, height: size, ...style }} />;
 }
 ```
+
+The drop-down widget also uses these overridable icon components, which receive
+the same `size` and `style` props:
+
+- `MarkdownChevronIcon`: the drop-down indicator
+- `MarkdownViewIcon`: the "View as Markdown" row
+- `MarkdownExternalLinkIcon`: the indicator on "Open in …" rows
+- `MarkdownProviderIcon`: AI provider marks (also receives the provider `id`)
 
 This allows you to use your site's existing icon components or any custom SVG
 icons.
