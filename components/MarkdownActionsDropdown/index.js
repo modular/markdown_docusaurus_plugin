@@ -196,6 +196,14 @@ export default function MarkdownActionsDropdown({
 
     const items = menuItems();
     const index = items.indexOf(document.activeElement);
+    // Tab and Shift+Tab leave the menu: let the browser move focus (the rows
+    // aren't in the tab order, so it goes past the menu or back to the
+    // trigger) and close the menu.
+    if (event.key === 'Tab') {
+      close({ refocus: false });
+      return;
+    }
+
     let next = null;
     if (event.key === 'ArrowDown') next = index + 1;
     else if (event.key === 'ArrowUp') next = index - 1;
@@ -236,6 +244,7 @@ export default function MarkdownActionsDropdown({
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             className={[
               'dropdown__link',
               'markdown-actions-dropdown__item',
@@ -259,6 +268,7 @@ export default function MarkdownActionsDropdown({
       <li key="view" role="none">
         <a
           role="menuitem"
+          tabIndex={-1}
           className="dropdown__link markdown-actions-dropdown__item markdown-actions-dropdown__item--view"
           href={markdownUrl}
           target="_blank"
@@ -320,6 +330,7 @@ export default function MarkdownActionsDropdown({
           <li key={link.id} role="none">
             <a
               role="menuitem"
+              tabIndex={-1}
               className={`dropdown__link markdown-actions-dropdown__item markdown-actions-dropdown__item--ai markdown-actions-dropdown__item--${link.id}`}
               href={link.href}
               target="_blank"
