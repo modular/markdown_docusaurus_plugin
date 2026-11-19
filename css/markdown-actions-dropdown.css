@@ -1,0 +1,102 @@
+/*
+ * Default styles for MarkdownActionsDropdown, loaded on every page through the
+ * plugin's getClientModules().
+ *
+ * Every rule is scoped to `.markdown-actions-dropdown--styled`, which the
+ * component adds unless you pass `unstyled`. To adjust these defaults, write
+ * rules with higher specificity (for example, prefix them with a container
+ * class). To style the dropdown from scratch, pass `unstyled` and none of
+ * these rules apply. Infima's `dropdown` classes still position the menu and
+ * show/hide it either way.
+ */
+
+/*
+ * Behavior, not appearance, so it applies even with `unstyled`: Infima
+ * transitions `visibility` with the fade, which leaves the menu hidden (and
+ * its rows unfocusable) for the first moments after opening. Make it visible
+ * at once on open so keyboard opening can move focus into it; closing keeps
+ * Infima's delayed hide so the fade-out still shows.
+ */
+.markdown-actions-dropdown--open > .markdown-actions-dropdown__menu {
+  transition-property: opacity, transform;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__icon,
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__chevron,
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__external {
+  display: inline-flex;
+  flex: none;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__chevron {
+  transition: transform var(--ifm-transition-fast);
+}
+
+.markdown-actions-dropdown--styled.markdown-actions-dropdown--open
+  .markdown-actions-dropdown__chevron {
+  transform: rotate(180deg);
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__menu {
+  min-width: 16rem;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__item:hover,
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__item:focus-visible {
+  background: var(--ifm-dropdown-hover-background-color);
+  text-decoration: none;
+}
+
+.markdown-actions-dropdown--styled
+  .markdown-actions-dropdown__item
+  .markdown-actions-dropdown__icon {
+  margin-top: 0.125rem;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__title {
+  font-weight: var(--ifm-font-weight-semibold);
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__description {
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.75rem;
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__external {
+  margin-top: 0.25rem;
+  color: var(--ifm-color-emphasis-600);
+}
+
+.markdown-actions-dropdown--styled .markdown-actions-dropdown__separator {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--ifm-color-emphasis-200);
+}

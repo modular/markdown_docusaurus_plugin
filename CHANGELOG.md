@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`aiProviders`** and **`aiPrompt`** options add "Open in ChatGPT / Claude / Gemini / Perplexity / Grok" rows (or custom assistants) to the drop-down widget. Ported from upstream [FlyNumber/markdown_docusaurus_plugin](https://github.com/FlyNumber/markdown_docusaurus_plugin) 2.3.x (`lib/ai-providers.js`, `lib/ai-icons.js`, tests, and **`THIRD_PARTY_NOTICES.md`** for the lobe-icons marks). Both options are validated at build time and exposed in the plugin's global data. Unlike upstream, the prompt's **`.md`** URL follows this fork's trailing-slash rule (**`/foo/`** → **`/foo.md`**), and the plugin id isn't restricted to **`"default"`**.
+- Providers accept an optional **`description`**, shown as a second line under the label. Built-ins use "Ask questions about this page".
+- **`MarkdownActionsDropdown`** can be rendered directly and restyled: stable **`markdown-actions-dropdown__*`** class names, no inline styles, two-line rows, and new **`buttonText`**, **`copiedButtonText`**, **`actions`**, **`labels`**, **`aiProviders`**, **`aiPrompt`**, **`triggerClassName`** and **`className`** props.
+- Overridable **`@theme/MarkdownChevronIcon`**, **`MarkdownViewIcon`**, **`MarkdownExternalLinkIcon`** and **`MarkdownProviderIcon`** components. The drop-down also uses the existing **`MarkdownCopyIcon`** and **`MarkdownCheckIcon`** overrides.
+- Keyboard and screen-reader support in the drop-down: menu roles, arrow keys, Home/End, and Escape (which returns focus to the trigger).
+- Default drop-down styles (**`css/markdown-actions-dropdown.css`**, loaded with **`getClientModules`**) so rows show the title above the description without site CSS. Pass **`unstyled`** to skip them.
 - **`markdown_source`** front matter names a file, by path relative to the site directory (for example **`generated/create-chat-completion.md`**), to emit as the page's **`.md`** in place of its cleaned source. Pages whose body renders client-side, such as OpenAPI reference pages, can use it to serve real markdown instead of only a title. Docs pages only. Absolute paths, paths with **`..`**, and symlinks that resolve outside the site directory are rejected.
+
+### Changed
+
+- The drop-down's "View as Markdown" row is a link to the **`.md`** file instead of a **`window.open()`** button.
+- The injected drop-down (**`widgetType: 'dropdown'`**) uses **`copyButtonText`** as its trigger label instead of a hard-coded "Copy page".
 
 ### Fixed
 

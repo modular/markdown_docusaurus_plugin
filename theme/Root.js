@@ -27,6 +27,8 @@ export default function Root({ children }) {
   const copyButtonText = pluginData.copyButtonText || 'Copy page';
   const copiedButtonText = pluginData.copiedButtonText || 'Copied';
   const supportDirectoryIndex = pluginData.supportDirectoryIndex || false;
+  const aiProviders = pluginData.aiProviders || [];
+  const aiPrompt = pluginData.aiPrompt;
 
   // Scroll to hash on page load (handles deep links)
   useEffect(() => {
@@ -82,6 +84,9 @@ export default function Root({ children }) {
           copyButtonText={copyButtonText}
           copiedButtonText={copiedButtonText}
           supportDirectoryIndex={supportDirectoryIndex}
+          buttonText={copyButtonText}
+          aiProviders={aiProviders}
+          aiPrompt={aiPrompt}
         />
       );
     };
@@ -91,7 +96,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex]);
+  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, aiProviders, aiPrompt]);
 
   return <>{children}</>;
 }
