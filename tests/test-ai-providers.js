@@ -6,7 +6,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT, normalizeAiOptions, buildAiLinks, resolveContextUrls } = require('../lib/ai-providers');
+const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT, DEFAULT_DESCRIPTION, normalizeAiOptions, buildAiLinks, resolveContextUrls } = require('../lib/ai-providers');
 
 const IDS = ['chatgpt', 'claude', 'gemini', 'perplexity', 'grok'];
 const promptFor = url => `Read from ${url} so I can ask questions about it.`;
@@ -178,4 +178,37 @@ test('buildAiLinks: custom entries honour their context', () => {
 
 test('buildAiLinks: empty provider list yields []', () => {
   assert.deepEqual(buildAiLinks({ aiProviders: [], aiPrompt: DEFAULT_PROMPT, ...ctx }), []);
+});
+
+// Fork addition: optional `description` (second line under the label).
+
+test('description: built-ins carry the default description through to links', () => {
+  assert.equal(DEFAULT_DESCRIPTION, 'Ask questions about this page');
+  for (const p of BUILT_IN_PROVIDERS) assert.equal(p.description, DEFAULT_DESCRIPTION, p.id);
+  const { aiProviders, aiPrompt } = normalizeAiOptions({ aiProviders: ['claude'] });
+  const [link] = buildAiLinks({ aiProviders, aiPrompt, ...ctx });
+  assert.equal(link.description, DEFAULT_DESCRIPTION);
+});
+
+test('description: custom entries may set one, and omit it otherwise', () => {
+  const out = normalizeAiOptions({ aiProviders: [
+    { label: 'A', description: 'Chat with A', url: 'https://a.test/?q={prompt}' },
+    { label: 'B', url: 'https://b.test/?q={prompt}' },
+  ] });
+  assert.equal(out.aiProviders[0].description, 'Chat with A');
+  assert.equal('description' in out.aiProviders[1], false);
+  assert.deepEqual(JSON.parse(JSON.stringify(out)), out);
+  const links = buildAiLinks({ ...out, ...ctx });
+  assert.equal(links[0].description, 'Chat with A');
+  assert.equal(links[1].description, undefined);
+});
+
+test('description: rejects empty or non-string values', () => {
+  for (const description of ['', '  ', 42]) {
+    assert.throws(
+      () => normalizeAiOptions({ aiProviders: [{ label: 'X', description, url: 'https://x.test/?q={prompt}' }] }),
+      /aiProviders\[0\]\.description/,
+      JSON.stringify(description)
+    );
+  }
 });
