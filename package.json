@@ -44,6 +44,7 @@
     "lib/",
     "theme/",
     "components/",
+    "css/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",

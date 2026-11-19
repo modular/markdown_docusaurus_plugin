@@ -19,8 +19,9 @@ const CLOSE_AFTER_COPY_MS = 1500;
  * "Copy page" menu button with markdown actions.
  *
  * Every element has a `markdown-actions-dropdown__*` class so sites can style
- * it; the only built-in styling comes from Infima's `dropdown` classes (menu
- * positioning and show/hide) and `triggerClassName`.
+ * it. Infima's `dropdown` classes position the menu and show/hide it, and the
+ * plugin's css/markdown-actions-dropdown.css adds default layout (two-line
+ * rows, icons, separator) unless `unstyled` is set.
  *
  * @param {Object} props
  * @param {string} props.docsPath - Base path for docs pages (default: '/docs/')
@@ -36,6 +37,8 @@ const CLOSE_AFTER_COPY_MS = 1500;
  * @param {string} props.triggerClassName - Extra classes for the trigger
  *   (default: Infima's 'button button--secondary button--sm'; pass '' to style it yourself)
  * @param {string} props.className - Extra classes for the root element
+ * @param {boolean} props.unstyled - Skip the plugin's default styles so the
+ *   site's CSS has full control (default: false)
  */
 export default function MarkdownActionsDropdown({
   docsPath = '/docs/',
@@ -48,6 +51,7 @@ export default function MarkdownActionsDropdown({
   aiPrompt = DEFAULT_PROMPT,
   triggerClassName = 'button button--secondary button--sm',
   className = '',
+  unstyled = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef(null);
@@ -247,6 +251,7 @@ export default function MarkdownActionsDropdown({
       className={[
         'dropdown',
         'markdown-actions-dropdown',
+        !unstyled && 'markdown-actions-dropdown--styled',
         isOpen && 'dropdown--show markdown-actions-dropdown--open',
         className,
       ].filter(Boolean).join(' ')}

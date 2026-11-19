@@ -433,14 +433,22 @@ const { aiProviders, aiPrompt } = usePluginData('markdown-source-plugin');
   aiProviders={aiProviders}           // default: none when rendered directly
   aiPrompt={aiPrompt}
   triggerClassName=""                 // default: Infima 'button button--secondary button--sm'
+  unstyled                            // skip the plugin's default styles (default: false)
 />
 ```
+
+The plugin loads default styles for the drop-down
+(`css/markdown-actions-dropdown.css`): row layout with the title above the
+description, icon spacing, the separator, and the chevron rotation. They're
+scoped to `.markdown-actions-dropdown--styled`, which the component adds
+unless you pass `unstyled`. Override individual rules with more specific
+selectors, or pass `unstyled` to style the drop-down from scratch.
 
 The drop-down's elements have these classes for styling:
 
 | Class | Element |
 | ----- | ------- |
-| `.markdown-actions-dropdown` | Root (also Infima's `.dropdown`; `--open` while open) |
+| `.markdown-actions-dropdown` | Root (also Infima's `.dropdown`; `--open` while open; `--styled` unless `unstyled`) |
 | `.markdown-actions-dropdown__trigger` | The button that opens the menu |
 | `.markdown-actions-dropdown__label`, `__chevron` | Trigger label and chevron |
 | `.markdown-actions-dropdown__menu` | The menu list (also Infima's `.dropdown__menu`) |

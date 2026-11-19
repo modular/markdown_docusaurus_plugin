@@ -1633,6 +1633,12 @@ function markdownSourcePlugin(context, options = {}) {
       return path.resolve(__dirname, './theme');
     },
 
+    // Default dropdown styles. Scoped to .markdown-actions-dropdown--styled,
+    // so they only apply to MarkdownActionsDropdown without `unstyled`.
+    getClientModules() {
+      return [path.resolve(__dirname, './css/markdown-actions-dropdown.css')];
+    },
+
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;

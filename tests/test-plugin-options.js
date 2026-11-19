@@ -56,3 +56,20 @@ test('invalid AI options fail when the plugin is created', () => {
   assert.throws(() => markdownSourcePlugin(context, { aiProviders: ['copilot'] }), /\[markdown-source-plugin\].*"copilot"/);
   assert.throws(() => markdownSourcePlugin(context, { aiPrompt: 'no placeholder' }), /aiPrompt.*\{url\}/);
 });
+
+test('getClientModules ships the default dropdown stylesheet', () => {
+  const fs = require('fs');
+  const modules = markdownSourcePlugin(context, {}).getClientModules();
+  assert.equal(modules.length, 1);
+  assert.match(modules[0], /css[\\/]markdown-actions-dropdown\.css$/);
+  assert.ok(fs.existsSync(modules[0]));
+  // Every rule must be scoped so `unstyled` (and unrelated pages) are untouched.
+  const selectors = fs.readFileSync(modules[0], 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('}')
+    .map(block => block.split('{')[0].trim())
+    .filter(Boolean);
+  for (const selector of selectors.flatMap(s => s.split(','))) {
+    assert.ok(selector.trim().startsWith('.markdown-actions-dropdown--styled'), selector);
+  }
+});

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`MarkdownActionsDropdown`** can be rendered directly and restyled: stable **`markdown-actions-dropdown__*`** class names, no inline styles, two-line rows, and new **`buttonText`**, **`copiedButtonText`**, **`actions`**, **`labels`**, **`aiProviders`**, **`aiPrompt`**, **`triggerClassName`** and **`className`** props.
 - Overridable **`@theme/MarkdownChevronIcon`**, **`MarkdownViewIcon`**, **`MarkdownExternalLinkIcon`** and **`MarkdownProviderIcon`** components. The drop-down also uses the existing **`MarkdownCopyIcon`** and **`MarkdownCheckIcon`** overrides.
 - Keyboard and screen-reader support in the drop-down: menu roles, arrow keys, Home/End, and Escape (which returns focus to the trigger).
+- Default drop-down styles (**`css/markdown-actions-dropdown.css`**, loaded with **`getClientModules`**) so rows show the title above the description without site CSS. Pass **`unstyled`** to skip them.
 - **`markdown_source`** front matter names a file, by path relative to the site directory (for example **`generated/create-chat-completion.md`**), to emit as the page's **`.md`** in place of its cleaned source. Pages whose body renders client-side, such as OpenAPI reference pages, can use it to serve real markdown instead of only a title. Docs pages only. Absolute paths, paths with **`..`**, and symlinks that resolve outside the site directory are rejected.
 
 ### Changed
