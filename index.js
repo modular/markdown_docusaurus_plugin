@@ -1,5 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
+const { normalizeAiOptions } = require('./lib/ai-providers');
 
 /**
  * Docusaurus plugin to copy raw markdown files to build output
@@ -1619,6 +1620,10 @@ function markdownSourcePlugin(context, options = {}) {
   // Which @docusaurus/plugin-content-docs instance to read when
   // includeAllDocVersions is enabled (matches the plugin's `id`).
   const docsPluginId = options.docsPluginId || 'default';
+  // "Open in ChatGPT/Claude/…" rows for MarkdownActionsDropdown. Validated
+  // here so a typo in aiProviders/aiPrompt fails the build with a clear
+  // message. Undefined aiProviders means all built-ins; false means none.
+  const { aiProviders, aiPrompt } = normalizeAiOptions(options);
 
   return {
     name: 'markdown-source-plugin',
@@ -1631,7 +1636,18 @@ function markdownSourcePlugin(context, options = {}) {
     // Expose config to client-side via globalData
     async contentLoaded({ actions }) {
       const { setGlobalData } = actions;
-      setGlobalData({ docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, directive });
+      // Plain JSON only: this is serialized into the client bundle.
+      setGlobalData({
+        docsPath,
+        widgetType,
+        containerSelector,
+        copyButtonText,
+        copiedButtonText,
+        supportDirectoryIndex,
+        directive,
+        aiProviders,
+        aiPrompt,
+      });
     },
 
     injectHtmlTags() {
