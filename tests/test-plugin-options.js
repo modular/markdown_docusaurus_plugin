@@ -63,13 +63,14 @@ test('getClientModules ships the default dropdown stylesheet', () => {
   assert.equal(modules.length, 1);
   assert.match(modules[0], /css[\\/]markdown-actions-dropdown\.css$/);
   assert.ok(fs.existsSync(modules[0]));
-  // Every rule must be scoped so `unstyled` (and unrelated pages) are untouched.
+  // Every rule must be scoped to the dropdown: appearance rules to --styled
+  // (so `unstyled` skips them), behavior rules to the open state.
   const selectors = fs.readFileSync(modules[0], 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('}')
     .map(block => block.split('{')[0].trim())
     .filter(Boolean);
   for (const selector of selectors.flatMap(s => s.split(','))) {
-    assert.ok(selector.trim().startsWith('.markdown-actions-dropdown--styled'), selector);
+    assert.match(selector.trim(), /^\.markdown-actions-dropdown--(styled|open)\b/, selector);
   }
 });

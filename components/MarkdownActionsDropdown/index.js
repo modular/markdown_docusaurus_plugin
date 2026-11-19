@@ -58,6 +58,8 @@ export default function MarkdownActionsDropdown({
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const closeTimerRef = useRef(null);
+  // Index of the row to focus once the menu has opened (keyboard opening).
+  const pendingFocusRef = useRef(null);
   const menuId = useId();
 
   const {
@@ -77,6 +79,23 @@ export default function MarkdownActionsDropdown({
   };
 
   useEffect(() => clearCloseTimer, []);
+
+  const menuItems = () =>
+    menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role="menuitem"]')) : [];
+
+  const focusItem = (index) => {
+    const items = menuItems();
+    if (items.length) items[(index + items.length) % items.length].focus();
+  };
+
+  // After a keyboard open, move focus into the menu. This runs once the menu
+  // has rendered with its open classes, so the rows are visible and focusable.
+  useEffect(() => {
+    if (isOpen && pendingFocusRef.current !== null) {
+      focusItem(pendingFocusRef.current);
+      pendingFocusRef.current = null;
+    }
+  }, [isOpen]);
 
   // Closing hides the list, so if focus was inside it (keyboard use), hand it
   // back to the trigger instead of leaving it on a hidden element.
@@ -133,16 +152,26 @@ export default function MarkdownActionsDropdown({
     }),
   });
 
-  const menuItems = () =>
-    menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role="menuitem"]')) : [];
-
   const openAndFocus = (index) => {
+    if (isOpen) {
+      focusItem(index);
+      return;
+    }
+    pendingFocusRef.current = index;
     setIsOpen(true);
-    // Wait for the menu to become visible before moving focus into it.
-    requestAnimationFrame(() => {
-      const items = menuItems();
-      if (items.length) items[(index + items.length) % items.length].focus();
-    });
+  };
+
+  // Enter and Space fire a click with detail === 0; a mouse click has
+  // detail >= 1. Keyboard users land on the first row, as with ArrowDown;
+  // mouse users keep focus on the trigger.
+  const handleTriggerClick = (event) => {
+    if (isOpen) {
+      close({ refocus: false });
+    } else if (event.detail === 0) {
+      openAndFocus(0);
+    } else {
+      setIsOpen(true);
+    }
   };
 
   const handleTriggerKeyDown = (event) => {
@@ -260,7 +289,7 @@ export default function MarkdownActionsDropdown({
         ref={triggerRef}
         type="button"
         className={['markdown-actions-dropdown__trigger', triggerClassName].filter(Boolean).join(' ')}
-        onClick={() => (isOpen ? close({ refocus: false }) : setIsOpen(true))}
+        onClick={handleTriggerClick}
         onKeyDown={handleTriggerKeyDown}
         aria-haspopup="menu"
         aria-expanded={isOpen}

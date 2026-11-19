@@ -10,6 +10,17 @@
  * show/hide it either way.
  */
 
+/*
+ * Behavior, not appearance, so it applies even with `unstyled`: Infima
+ * transitions `visibility` with the fade, which leaves the menu hidden (and
+ * its rows unfocusable) for the first moments after opening. Make it visible
+ * at once on open so keyboard opening can move focus into it; closing keeps
+ * Infima's delayed hide so the fade-out still shows.
+ */
+.markdown-actions-dropdown--open > .markdown-actions-dropdown__menu {
+  transition-property: opacity, transform;
+}
+
 .markdown-actions-dropdown--styled .markdown-actions-dropdown__trigger {
   display: inline-flex;
   align-items: center;
