@@ -4,6 +4,9 @@ import CopyIcon from '@theme/MarkdownCopyIcon';
 import CheckIcon from '@theme/MarkdownCheckIcon';
 import ChevronIcon from '@theme/MarkdownChevronIcon';
 import ViewIcon from '@theme/MarkdownViewIcon';
+import ExternalLinkIcon from '@theme/MarkdownExternalLinkIcon';
+import ProviderIcon from '@theme/MarkdownProviderIcon';
+import { buildAiLinks, resolveContextUrls, DEFAULT_PROMPT } from '../../lib/ai-providers';
 
 const DEFAULT_LABELS = {
   copy: { title: 'Copy page', description: 'Copy page as Markdown for LLMs' },
@@ -26,6 +29,10 @@ const CLOSE_AFTER_COPY_MS = 1500;
  * @param {string} props.copiedButtonText - Copy row title after a successful copy (default: 'Copied')
  * @param {('copy'|'view')[]} props.actions - Which markdown rows to show, in order (default: ['view', 'copy'])
  * @param {Object} props.labels - Per-row { title, description } overrides, keyed by action
+ * @param {Object[]} props.aiProviders - "Open in …" rows, as normalized by the
+ *   plugin's `aiProviders` option (read them from the plugin's global data).
+ *   Default: none.
+ * @param {string} props.aiPrompt - Prompt template with a {url} placeholder
  * @param {string} props.triggerClassName - Extra classes for the trigger
  *   (default: Infima's 'button button--secondary button--sm'; pass '' to style it yourself)
  * @param {string} props.className - Extra classes for the root element
@@ -37,6 +44,8 @@ export default function MarkdownActionsDropdown({
   copiedButtonText = 'Copied',
   actions = ['view', 'copy'],
   labels = {},
+  aiProviders = [],
+  aiPrompt = DEFAULT_PROMPT,
   triggerClassName = 'button button--secondary button--sm',
   className = '',
 }) {
@@ -107,6 +116,18 @@ export default function MarkdownActionsDropdown({
   if (!isDocsPage) {
     return null;
   }
+
+  // Absolute URLs, since the assistant fetches them from outside the site.
+  // (isDocsPage is false during SSR, so window is always defined here.)
+  const aiLinks = buildAiLinks({
+    aiProviders,
+    aiPrompt,
+    ...resolveContextUrls({
+      origin: window.location.origin,
+      pathname: window.location.pathname,
+      supportDirectoryIndex,
+    }),
+  });
 
   const menuItems = () =>
     menuRef.current ? Array.from(menuRef.current.querySelectorAll('[role="menuitem"]')) : [];
@@ -249,6 +270,29 @@ export default function MarkdownActionsDropdown({
         onKeyDown={handleMenuKeyDown}
       >
         {actions.map(renderAction)}
+        {actions.length > 0 && aiLinks.length > 0 && (
+          <li role="separator" className="markdown-actions-dropdown__separator" />
+        )}
+        {aiLinks.map((link) => (
+          <li key={link.id} role="none">
+            <a
+              role="menuitem"
+              className={`dropdown__link markdown-actions-dropdown__item markdown-actions-dropdown__item--ai markdown-actions-dropdown__item--${link.id}`}
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => close()}
+            >
+              <span className="markdown-actions-dropdown__icon">
+                <ProviderIcon id={link.id} size={16} />
+              </span>
+              {renderText(link.label, link.description)}
+              <span className="markdown-actions-dropdown__external">
+                <ExternalLinkIcon size={12} />
+              </span>
+            </a>
+          </li>
+        ))}
       </ul>
     </div>
   );
