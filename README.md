@@ -496,7 +496,6 @@ const { aiProviders, aiPrompt, aiQuestion } = usePluginData('markdown-source-plu
   copiedButtonText="Copied!"          // (default: 'Copied')
   viewButtonText="View markdown"      // (default: 'View markdown')
   icons="providers"                   // 'none', 'providers' (assistants' marks on the "Ask" buttons) or 'all' (also copy/view icons) (default: 'none')
-  externalIcon={false}                // external-link icon at the end of each "Ask" button (default: true)
   buttonClassName=""                  // default: Infima 'button button--secondary button--sm'
   unstyled                            // skip the plugin's default styles (default: false)
 />
@@ -537,7 +536,6 @@ The ask bar's elements have these classes:
 | `.markdown-ask-bar__input` | The text box |
 | `.markdown-ask-bar__button` | Every button; also `__provider` (with `--<provider id>`), `__copy` (with `--copied` / `--error`) or `__view` |
 | `.markdown-ask-bar__label`, `__icon` | Button text and icon slot (rendered only with the `icons` prop) |
-| `.markdown-ask-bar__external` | External-link icon at the end of each "Ask" button (unless `externalIcon={false}`) |
 | `.markdown-ask-bar__separator` | Divider before the markdown buttons |
 | `.markdown-ask-bar__actions` | Group holding the markdown buttons (`display: contents` in the default styles) |
 
