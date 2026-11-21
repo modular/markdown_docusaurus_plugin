@@ -462,6 +462,7 @@ can import a component and render it in a swizzled theme component. Set
 `'#no-inject'`) so the plugin doesn't also inject one.
 
 ```tsx
+import Link from '@docusaurus/Link';
 import { usePluginData } from '@docusaurus/useGlobalData';
 import MarkdownCopyButton from 'docusaurus-markdown-source-plugin/components/MarkdownCopyButton';
 import MarkdownActionsDropdown from 'docusaurus-markdown-source-plugin/components/MarkdownActionsDropdown';
@@ -498,7 +499,12 @@ const { aiProviders, aiPrompt, aiQuestion } = usePluginData('markdown-source-plu
   icons="providers"                   // 'none', 'providers' (assistants' marks on the "Ask" buttons) or 'all' (also copy/view icons) (default: 'none')
   buttonClassName=""                  // default: Infima 'button button--secondary button--sm'
   unstyled                            // skip the plugin's default styles (default: false)
-/>
+>
+  {/* Optional: extra buttons after the markdown buttons */}
+  <Link className="markdown-ask-bar__button button button--secondary button--sm" to="/docs/ai-setup">
+    AI setup
+  </Link>
+</MarkdownAskBar>
 ```
 
 The plugin loads default styles for the drop-down
@@ -537,7 +543,7 @@ The ask bar's elements have these classes:
 | `.markdown-ask-bar__button` | Every button; also `__provider` (with `--<provider id>`), `__copy` (with `--copied` / `--error`) or `__view` |
 | `.markdown-ask-bar__label`, `__icon` | Button text and icon slot (rendered only with the `icons` prop) |
 | `.markdown-ask-bar__separator` | Divider before the markdown buttons |
-| `.markdown-ask-bar__actions` | Group holding the markdown buttons (`display: contents` in the default styles) |
+| `.markdown-ask-bar__actions` | Group holding the markdown buttons and any children (`display: contents` in the default styles) |
 
 ### Custom icons
 

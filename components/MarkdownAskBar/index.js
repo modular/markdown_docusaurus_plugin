@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { Children, useState, useEffect } from 'react';
 import useMarkdownCopy from '../hooks/useMarkdownCopy';
 import CopyIcon from '@theme/MarkdownCopyIcon';
 import CheckIcon from '@theme/MarkdownCheckIcon';
@@ -49,6 +49,10 @@ import {
  * @param {('none'|'providers'|'all')} props.icons - Icons at the front of the
  *   buttons: none, the assistants' marks on the "Ask" buttons only, or those
  *   plus the copy and view icons (default: 'none')
+ * @param {React.ReactNode} props.children - Extra buttons or links, rendered
+ *   after the markdown buttons in the same group (for example, a link to the
+ *   site's AI setup guide). Give them the `markdown-ask-bar__button` class
+ *   (and your button classes) to match the other buttons.
  * @param {string} props.buttonClassName - Extra classes for every button
  *   (default: Infima's 'button button--secondary button--sm'; pass '' to style them yourself)
  * @param {string} props.className - Extra classes for the root element
@@ -67,6 +71,7 @@ export default function MarkdownAskBar({
   copiedButtonText = 'Copied',
   viewButtonText = 'View markdown',
   icons = 'none',
+  children,
   buttonClassName = 'button button--secondary button--sm',
   className = '',
   unstyled = false,
@@ -164,6 +169,8 @@ export default function MarkdownAskBar({
   };
 
   const actionButtons = actions.map(renderAction).filter(Boolean);
+  // toArray drops null, undefined and booleans, which Children.count counts
+  const hasActions = actionButtons.length > 0 || Children.toArray(children).length > 0;
 
   return (
     <div
@@ -209,11 +216,14 @@ export default function MarkdownAskBar({
           ))}
         </div>
       )}
-      {aiLinks.length > 0 && actionButtons.length > 0 && (
+      {aiLinks.length > 0 && hasActions && (
         <span className="markdown-ask-bar__separator" aria-hidden="true" />
       )}
-      {actionButtons.length > 0 && (
-        <div className="markdown-ask-bar__actions">{actionButtons}</div>
+      {hasActions && (
+        <div className="markdown-ask-bar__actions">
+          {actionButtons}
+          {children}
+        </div>
       )}
     </div>
   );
