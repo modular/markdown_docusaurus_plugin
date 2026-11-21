@@ -1620,10 +1620,11 @@ function markdownSourcePlugin(context, options = {}) {
   // Which @docusaurus/plugin-content-docs instance to read when
   // includeAllDocVersions is enabled (matches the plugin's `id`).
   const docsPluginId = options.docsPluginId || 'default';
-  // "Open in ChatGPT/Claude/…" rows for MarkdownActionsDropdown. Validated
-  // here so a typo in aiProviders/aiPrompt fails the build with a clear
-  // message. Undefined aiProviders means all built-ins; false means none.
-  const { aiProviders, aiPrompt } = normalizeAiOptions(options);
+  // "Open in ChatGPT/Claude/…" rows for MarkdownActionsDropdown and "Ask …"
+  // buttons for MarkdownAskBar. Validated here so a typo in
+  // aiProviders/aiPrompt/aiQuestion fails the build with a clear message.
+  // Undefined aiProviders means all built-ins; false means none.
+  const { aiProviders, aiPrompt, aiQuestion } = normalizeAiOptions(options);
 
   return {
     name: 'markdown-source-plugin',
@@ -1653,6 +1654,7 @@ function markdownSourcePlugin(context, options = {}) {
         directive,
         aiProviders,
         aiPrompt,
+        aiQuestion,
       });
     },
 

@@ -7,7 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const markdownSourcePlugin = require('../index');
-const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT } = require('../lib/ai-providers');
+const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT, DEFAULT_QUESTION } = require('../lib/ai-providers');
 
 const context = { siteDir: __dirname, siteConfig: { url: 'https://docs.test', baseUrl: '/' } };
 
@@ -22,6 +22,11 @@ test('global data includes all built-in providers and the default prompt by defa
   const data = await globalDataFor({});
   assert.deepEqual(data.aiProviders.map(p => p.id), BUILT_IN_PROVIDERS.map(p => p.id));
   assert.equal(data.aiPrompt, DEFAULT_PROMPT);
+  assert.equal(data.aiQuestion, DEFAULT_QUESTION);
+});
+
+test('global data includes a custom aiQuestion', async () => {
+  assert.equal((await globalDataFor({ aiQuestion: 'Explain this page.' })).aiQuestion, 'Explain this page.');
 });
 
 test('global data honours a provider subset, order and custom prompt', async () => {
@@ -55,6 +60,7 @@ test('existing global data keys are unchanged', async () => {
 test('invalid AI options fail when the plugin is created', () => {
   assert.throws(() => markdownSourcePlugin(context, { aiProviders: ['copilot'] }), /\[markdown-source-plugin\].*"copilot"/);
   assert.throws(() => markdownSourcePlugin(context, { aiPrompt: 'no placeholder' }), /aiPrompt.*\{url\}/);
+  assert.throws(() => markdownSourcePlugin(context, { aiQuestion: '' }), /aiQuestion/);
 });
 
 test('getClientModules ships the default dropdown stylesheet', () => {
