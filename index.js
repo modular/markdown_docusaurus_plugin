@@ -1596,7 +1596,8 @@ function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
-  // Widget type: 'button' (simple copy button) or 'dropdown' (with multiple actions)
+  // Widget type: 'button' (simple copy button), 'dropdown' (with multiple
+  // actions) or 'ask' (question box with "Ask <assistant>" buttons)
   const widgetType = options.widgetType || 'button';
   // CSS selector for where to inject the widget
   const containerSelector = options.containerSelector || 'article .markdown header';
@@ -1620,10 +1621,11 @@ function markdownSourcePlugin(context, options = {}) {
   // Which @docusaurus/plugin-content-docs instance to read when
   // includeAllDocVersions is enabled (matches the plugin's `id`).
   const docsPluginId = options.docsPluginId || 'default';
-  // "Open in ChatGPT/Claude/…" rows for MarkdownActionsDropdown. Validated
-  // here so a typo in aiProviders/aiPrompt fails the build with a clear
-  // message. Undefined aiProviders means all built-ins; false means none.
-  const { aiProviders, aiPrompt } = normalizeAiOptions(options);
+  // "Open in ChatGPT/Claude/…" rows for MarkdownActionsDropdown and "Ask …"
+  // buttons for MarkdownAskBar. Validated here so a typo in
+  // aiProviders/aiPrompt/aiQuestion fails the build with a clear message.
+  // Undefined aiProviders means all built-ins; false means none.
+  const { aiProviders, aiPrompt, aiQuestion } = normalizeAiOptions(options);
 
   return {
     name: 'markdown-source-plugin',
@@ -1633,10 +1635,14 @@ function markdownSourcePlugin(context, options = {}) {
       return path.resolve(__dirname, './theme');
     },
 
-    // Default dropdown styles. Scoped to .markdown-actions-dropdown--styled,
-    // so they only apply to MarkdownActionsDropdown without `unstyled`.
+    // Default widget styles. Scoped to .markdown-actions-dropdown--styled and
+    // .markdown-ask-bar--styled, so they only apply to MarkdownActionsDropdown
+    // and MarkdownAskBar without `unstyled`.
     getClientModules() {
-      return [path.resolve(__dirname, './css/markdown-actions-dropdown.css')];
+      return [
+        path.resolve(__dirname, './css/markdown-actions-dropdown.css'),
+        path.resolve(__dirname, './css/markdown-ask-bar.css'),
+      ];
     },
 
     // Expose config to client-side via globalData
@@ -1653,6 +1659,7 @@ function markdownSourcePlugin(context, options = {}) {
         directive,
         aiProviders,
         aiPrompt,
+        aiQuestion,
       });
     },
 

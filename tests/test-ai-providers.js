@@ -6,7 +6,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT, DEFAULT_DESCRIPTION, normalizeAiOptions, buildAiLinks, resolveContextUrls } = require('../lib/ai-providers');
+const { BUILT_IN_PROVIDERS, DEFAULT_PROMPT, DEFAULT_DESCRIPTION, DEFAULT_QUESTION, DEFAULT_ASK_PROMPT, normalizeAiOptions, buildAiLinks, resolveContextUrls } = require('../lib/ai-providers');
 
 const IDS = ['chatgpt', 'claude', 'gemini', 'perplexity', 'grok'];
 const promptFor = url => `Read from ${url} so I can ask questions about it.`;
@@ -211,4 +211,65 @@ test('description: rejects empty or non-string values', () => {
       JSON.stringify(description)
     );
   }
+});
+
+// Fork addition: MarkdownAskBar's `askLabel`, `aiQuestion` and {question}.
+
+test('askLabel: built-ins have "Ask <name>" labels, carried through to links', () => {
+  assert.deepEqual(BUILT_IN_PROVIDERS.map(p => p.askLabel), ['Ask ChatGPT', 'Ask Claude', 'Ask Gemini', 'Ask Perplexity', 'Ask Grok']);
+  const { aiProviders, aiPrompt } = normalizeAiOptions({ aiProviders: ['claude'] });
+  assert.equal(buildAiLinks({ aiProviders, aiPrompt, ...ctx })[0].askLabel, 'Ask Claude');
+});
+
+test('askLabel: custom entries may set one, and links fall back to label otherwise', () => {
+  const out = normalizeAiOptions({ aiProviders: [
+    { label: 'Open in A', askLabel: 'Ask A', url: 'https://a.test/?q={prompt}' },
+    { label: 'Open in B', url: 'https://b.test/?q={prompt}' },
+  ] });
+  assert.equal(out.aiProviders[0].askLabel, 'Ask A');
+  assert.equal('askLabel' in out.aiProviders[1], false);
+  assert.deepEqual(JSON.parse(JSON.stringify(out)), out);
+  const links = buildAiLinks({ ...out, ...ctx });
+  assert.deepEqual(links.map(l => l.askLabel), ['Ask A', 'Open in B']);
+});
+
+test('askLabel: rejects empty or non-string values', () => {
+  for (const askLabel of ['', '  ', 42]) {
+    assert.throws(
+      () => normalizeAiOptions({ aiProviders: [{ label: 'X', askLabel, url: 'https://x.test/?q={prompt}' }] }),
+      /aiProviders\[0\]\.askLabel/,
+      JSON.stringify(askLabel)
+    );
+  }
+});
+
+test('aiQuestion: defaults to "Summarize this page." and accepts any non-empty string', () => {
+  assert.equal(DEFAULT_QUESTION, 'Summarize this page.');
+  assert.equal(normalizeAiOptions({}).aiQuestion, DEFAULT_QUESTION);
+  assert.equal(normalizeAiOptions({ aiQuestion: 'Explain this page.' }).aiQuestion, 'Explain this page.');
+  for (const aiQuestion of ['', '   ', 42, null]) {
+    assert.throws(() => normalizeAiOptions({ aiQuestion }), /\[markdown-source-plugin\] aiQuestion/, JSON.stringify(aiQuestion));
+  }
+});
+
+test('buildAiLinks with a question: the ask prompt puts the context URL first, then the question', () => {
+  assert.equal(DEFAULT_ASK_PROMPT, '{url}\n\n{question}');
+  const { aiProviders } = normalizeAiOptions({ aiProviders: ['claude', 'gemini'] });
+  const links = buildAiLinks({ aiProviders, aiPrompt: DEFAULT_ASK_PROMPT, question: 'What is ownership?', ...ctx });
+  assert.equal(qOf(links[0].href), `${ctx.markdownUrl}\n\nWhat is ownership?`);
+  assert.equal(qOf(links[1].href), `${ctx.pageUrl}\n\nWhat is ownership?`);
+});
+
+test('buildAiLinks with a question: the question is literal ({url}, $&, &, #, newlines)', () => {
+  const { aiProviders } = normalizeAiOptions({ aiProviders: ['claude'] });
+  for (const question of ['Compare {url} with v1', 'a $& b', 'x&q=y#z', 'line 1\nline 2', 'café 100%']) {
+    const [link] = buildAiLinks({ aiProviders, aiPrompt: DEFAULT_ASK_PROMPT, question, ...ctx });
+    assert.equal(qOf(link.href), `${ctx.markdownUrl}\n\n${question}`, question);
+  }
+});
+
+test('buildAiLinks without a question leaves a {question} placeholder alone', () => {
+  const { aiProviders } = normalizeAiOptions({ aiProviders: ['claude'] });
+  const [link] = buildAiLinks({ aiProviders, aiPrompt: 'Read {url}: {question}', ...ctx });
+  assert.equal(qOf(link.href), `Read ${ctx.markdownUrl}: {question}`);
 });

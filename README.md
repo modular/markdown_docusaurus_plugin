@@ -23,7 +23,8 @@ Here are some of the things we added/changed:
   - Specify the path to your docs (previously hard-coded to `/docs`)
   - Optional `blog` array so `@docusaurus/plugin-content-blog` posts get
     matching `.md` URLs (same slug rules as the blog plugin)
-  - Select the widget type, either original drop-down or new button
+  - Select the widget type: the original drop-down, a new button, or a new
+    ask bar
   - Specify the DOM element where you want to inject the button/drop-down
     as a CSS selector (default is the page header)
   - Specify the button text
@@ -34,6 +35,9 @@ Here are some of the things we added/changed:
   "Open in Claude", and so on) into a reworked drop-down widget that sites
   can restyle and render themselves, with an optional `description` per
   provider (see [AI assistant links](#ai-assistant-links-aiproviders-aiprompt))
+- Adds a third widget, `MarkdownAskBar`: a text box for the reader's question,
+  an "Ask ChatGPT" / "Ask Claude" / … button per provider, and a "Copy page"
+  button (see [Ask bar](#ask-bar-markdownaskbar))
 - Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
   currently not supported)
 
@@ -98,7 +102,8 @@ module.exports = {
       ],
 
       // 'button' for a simple copy button, 'dropdown' for a menu
-      // with multiple actions (default: 'button')
+      // with multiple actions, 'ask' for a question box with
+      // "Ask <assistant>" buttons (default: 'button')
       widgetType: 'button',
 
       // CSS selector for the element the widget is injected into
@@ -111,15 +116,19 @@ module.exports = {
       // Label shown after a successful copy (default: 'Copied')
       copiedButtonText: 'Copied',
 
-      // "Open in …" rows in the drop-down widget: built-in ids
-      // ('chatgpt', 'claude', 'gemini', 'perplexity', 'grok') and/or custom
-      // { label, url, description?, context? } entries, or false for none.
-      // (default: all five built-ins)
+      // "Open in …" rows in the drop-down widget and "Ask …" buttons in the
+      // ask bar: built-in ids ('chatgpt', 'claude', 'gemini', 'perplexity',
+      // 'grok') and/or custom { label, url, askLabel?, description?, context? }
+      // entries, or false for none. (default: all five built-ins)
       aiProviders: ['chatgpt', 'claude'],
 
-      // Prompt sent to the assistant; must contain {url}.
+      // Prompt the drop-down sends to the assistant; must contain {url}.
       // (default: 'Read from {url} so I can ask questions about it.')
       aiPrompt: 'Read from {url} so I can ask questions about it.',
+
+      // Question the ask bar sends when the reader types nothing; also the
+      // text box's placeholder. (default: 'Summarize this page.')
+      aiQuestion: 'Summarize this page.',
 
       // When true, trailing-slash URLs fetch intro.md
       // (e.g., /foo/ -> /foo/intro.md). When false, the trailing slash
@@ -367,8 +376,9 @@ When `htmlDirective` is not configured, nothing is injected.
 
 ### AI assistant links (`aiProviders`, `aiPrompt`)
 
-The drop-down widget can list "Open in …" rows that open an AI assistant with
-a prompt pointing at the current page. These options and the provider table
+The drop-down widget can list "Open in …" rows, and the
+[ask bar](#ask-bar-markdownaskbar) "Ask …" buttons, that open an AI assistant
+with a prompt pointing at the current page. These options and the provider table
 are ported from
 [upstream](https://github.com/FlyNumber/markdown_docusaurus_plugin), and
 both options are validated at build time, so a typo fails `docusaurus build`.
@@ -386,7 +396,8 @@ Built-in providers:
 ChatGPT and Claude fetch the URL they're given, so they get the clean `.md`
 file. The others answer from a search index, which doesn't hold the `.md`
 files, so they get the HTML page. Each built-in row shows the description
-"Ask questions about this page".
+"Ask questions about this page", and each built-in ask bar button is labeled
+"Ask ChatGPT", "Ask Claude", and so on.
 
 `aiProviders` takes built-in ids in the order you want them, custom entries,
 or `false` for none:
@@ -397,6 +408,7 @@ aiProviders: [
   'chatgpt',
   {
     label: 'Open in Mistral',
+    askLabel: 'Ask Mistral', // optional: ask bar button text (default: label)
     description: 'Chat about this page', // optional (fork addition)
     url: 'https://chat.mistral.ai/chat?q={prompt}', // must contain {prompt}
     context: 'page', // optional: 'page' (default) or 'markdown'
@@ -404,8 +416,46 @@ aiProviders: [
 ],
 ```
 
-The rows appear in the drop-down widget only. `MarkdownCopyButton` ignores
-these options.
+The links appear in the drop-down widget and the ask bar.
+`MarkdownCopyButton` ignores these options.
+
+### Ask bar (`MarkdownAskBar`)
+
+The ask bar is a text box followed by one "Ask …" button per `aiProviders`
+entry, then a separator and a "Copy page" button:
+
+```
+[ Summarize this page.   ] [Ask ChatGPT] [Ask Claude] | [Copy page]
+```
+
+Each "Ask" button opens the assistant with the page URL first, then the
+reader's question on a new paragraph. When the box is empty, it sends
+`aiQuestion` instead, which is also the box's placeholder. As with the
+drop-down, ChatGPT and Claude get the `.md` URL and the others get the HTML
+page URL. For example, with an empty box, "Ask Claude" sends:
+
+```
+https://example.com/docs/intro.md
+
+Summarize this page.
+```
+
+The buttons are links whose URL updates as the reader types, so
+middle-click and "open in new tab" work. Pressing Enter in the box opens the
+first provider. The question clears when the reader moves to another page.
+
+Unlike the other widgets, the ask bar renders on the server, so a page that
+renders it directly doesn't shift when it loads. Its links get their URLs
+once the page hydrates, and it hides itself then if the page isn't under
+`docsPath`.
+
+Set `widgetType: 'ask'` to inject it, or render it yourself (see below).
+Injected, it uses `aiProviders` and `aiQuestion`, and `copyButtonText` /
+`copiedButtonText` for the copy button. Rendered yourself, it also takes
+icons, extra links (as children) and the other props below. `aiPrompt`
+doesn't apply to the ask bar; to change how it combines the URL and
+question, pass the component an `askPrompt` template with `{url}` and
+`{question}` placeholders (default: `'{url}\n\n{question}'`).
 
 ### Render the widget yourself
 
@@ -415,15 +465,19 @@ can import a component and render it in a swizzled theme component. Set
 `'#no-inject'`) so the plugin doesn't also inject one.
 
 ```tsx
+import Link from '@docusaurus/Link';
 import { usePluginData } from '@docusaurus/useGlobalData';
 import MarkdownCopyButton from 'docusaurus-markdown-source-plugin/components/MarkdownCopyButton';
 import MarkdownActionsDropdown from 'docusaurus-markdown-source-plugin/components/MarkdownActionsDropdown';
+import MarkdownAskBar from 'docusaurus-markdown-source-plugin/components/MarkdownAskBar';
 
 // A single copy button:
 <MarkdownCopyButton docsPath="/" copyButtonText="Copy as Markdown" copiedButtonText="Copied!" />
 
-// The drop-down, with the AI rows from your plugin config:
-const { aiProviders, aiPrompt } = usePluginData('markdown-source-plugin');
+// The AI options from your plugin config, for the drop-down and the ask bar:
+const { aiProviders, aiPrompt, aiQuestion } = usePluginData('markdown-source-plugin');
+
+// The drop-down:
 <MarkdownActionsDropdown
   docsPath="/"
   buttonText="Copy page"              // trigger label (default: 'Copy page')
@@ -435,6 +489,27 @@ const { aiProviders, aiPrompt } = usePluginData('markdown-source-plugin');
   triggerClassName=""                 // default: Infima 'button button--secondary button--sm'
   unstyled                            // skip the plugin's default styles (default: false)
 />
+
+// The ask bar:
+<MarkdownAskBar
+  docsPath="/"
+  aiProviders={aiProviders}           // "Ask …" buttons; default: none, which also hides the text box
+  aiQuestion={aiQuestion}             // placeholder and default question (default: 'Summarize this page.')
+  askPrompt={'{url}\n\n{question}'}   // how the URL and question are combined (this is the default)
+  inputLabel="Ask about this page"    // text box's accessible name (default: 'Ask an AI assistant about this page')
+  actions={['copy', 'view']}          // markdown buttons after the separator (default: ['copy'])
+  copyButtonText="Copy page"          // (default: 'Copy page')
+  copiedButtonText="Copied!"          // (default: 'Copied')
+  viewButtonText="View markdown"      // (default: 'View markdown')
+  icons="providers"                   // 'none', 'providers' (assistants' marks on the "Ask" buttons) or 'all' (also copy/view icons) (default: 'none')
+  buttonClassName=""                  // default: Infima 'button button--secondary button--sm'
+  unstyled                            // skip the plugin's default styles (default: false)
+>
+  {/* Optional: extra buttons after the markdown buttons */}
+  <Link className="markdown-ask-bar__button button button--secondary button--sm" to="/docs/ai-setup">
+    AI setup
+  </Link>
+</MarkdownAskBar>
 ```
 
 The plugin loads default styles for the drop-down
@@ -443,6 +518,11 @@ description, icon spacing, the separator, and the chevron rotation. They're
 scoped to `.markdown-actions-dropdown--styled`, which the component adds
 unless you pass `unstyled`. Override individual rules with more specific
 selectors, or pass `unstyled` to style the drop-down from scratch.
+
+The plugin also loads default styles for the ask bar
+(`css/markdown-ask-bar.css`), scoped to `.markdown-ask-bar--styled` in the
+same way: the text box, buttons and separator wrap as one row, and the text
+box grows to fill its line (up to 20rem).
 
 The drop-down's elements have these classes for styling:
 
@@ -457,6 +537,19 @@ The drop-down's elements have these classes for styling:
 | `.markdown-actions-dropdown__title`, `__description` | Row text lines |
 | `.markdown-actions-dropdown__external` | External-link indicator on AI rows |
 | `.markdown-actions-dropdown__separator` | Divider between markdown rows and AI rows |
+
+The ask bar's elements have these classes:
+
+| Class | Element |
+| ----- | ------- |
+| `.markdown-ask-bar` | Root (`--styled` unless `unstyled`) |
+| `.markdown-ask-bar__ask` | Group holding the text box and "Ask" buttons (`display: contents` in the default styles) |
+| `.markdown-ask-bar__input` | The text box |
+| `.markdown-ask-bar__button` | Every button; also `__provider` (with `--<provider id>`), `__copy` (with `--copied` / `--error`) or `__view` |
+| `.markdown-ask-bar__label` | Button text |
+| `.markdown-ask-bar__icon` | Icon slot at the front of a button (only with the `icons` prop) |
+| `.markdown-ask-bar__separator` | Divider before the markdown buttons |
+| `.markdown-ask-bar__actions` | Group holding the markdown buttons and any children (`display: contents` in the default styles) |
 
 ### Custom icons
 
