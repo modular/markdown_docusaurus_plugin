@@ -36,8 +36,8 @@ Here are some of the things we added/changed:
   can restyle and render themselves, with an optional `description` per
   provider (see [AI assistant links](#ai-assistant-links-aiproviders-aiprompt))
 - Adds a third widget, `MarkdownAskBar`: a text box for the reader's question,
-  an "Ask ChatGPT" / "Ask Claude" / … button per provider, and a "Copy
-  markdown" button (see [Ask bar](#ask-bar-markdownaskbar))
+  an "Ask ChatGPT" / "Ask Claude" / … button per provider, and a "Copy page"
+  button (see [Ask bar](#ask-bar-markdownaskbar))
 - Adds support for docs pages with `slug: /` frontmatter (other docs slug overrides are
   currently not supported)
 
@@ -422,10 +422,10 @@ The links appear in the drop-down widget and the ask bar.
 ### Ask bar (`MarkdownAskBar`)
 
 The ask bar is a text box followed by one "Ask …" button per `aiProviders`
-entry, then a separator and a "Copy markdown" button:
+entry, then a separator and a "Copy page" button:
 
 ```
-[ Summarize this page.   ] [Ask ChatGPT] [Ask Claude] | [Copy markdown]
+[ Summarize this page.   ] [Ask ChatGPT] [Ask Claude] | [Copy page]
 ```
 
 Each "Ask" button opens the assistant with the page URL first, then the
@@ -450,8 +450,11 @@ once the page hydrates, and it hides itself then if the page isn't under
 `docsPath`.
 
 Set `widgetType: 'ask'` to inject it, or render it yourself (see below).
-`aiPrompt` doesn't apply to the ask bar; to change how it combines the URL
-and question, pass the component an `askPrompt` template with `{url}` and
+Injected, it uses `aiProviders` and `aiQuestion`, and `copyButtonText` /
+`copiedButtonText` for the copy button. Rendered yourself, it also takes
+icons, extra links (as children) and the other props below. `aiPrompt`
+doesn't apply to the ask bar; to change how it combines the URL and
+question, pass the component an `askPrompt` template with `{url}` and
 `{question}` placeholders (default: `'{url}\n\n{question}'`).
 
 ### Render the widget yourself
@@ -471,8 +474,10 @@ import MarkdownAskBar from 'docusaurus-markdown-source-plugin/components/Markdow
 // A single copy button:
 <MarkdownCopyButton docsPath="/" copyButtonText="Copy as Markdown" copiedButtonText="Copied!" />
 
-// The drop-down, with the AI options from your plugin config:
+// The AI options from your plugin config, for the drop-down and the ask bar:
 const { aiProviders, aiPrompt, aiQuestion } = usePluginData('markdown-source-plugin');
+
+// The drop-down:
 <MarkdownActionsDropdown
   docsPath="/"
   buttonText="Copy page"              // trigger label (default: 'Copy page')
@@ -493,7 +498,7 @@ const { aiProviders, aiPrompt, aiQuestion } = usePluginData('markdown-source-plu
   askPrompt={'{url}\n\n{question}'}   // how the URL and question are combined (this is the default)
   inputLabel="Ask about this page"    // text box's accessible name (default: 'Ask an AI assistant about this page')
   actions={['copy', 'view']}          // markdown buttons after the separator (default: ['copy'])
-  copyButtonText="Copy markdown"      // (default: 'Copy markdown')
+  copyButtonText="Copy page"          // (default: 'Copy page')
   copiedButtonText="Copied!"          // (default: 'Copied')
   viewButtonText="View markdown"      // (default: 'View markdown')
   icons="providers"                   // 'none', 'providers' (assistants' marks on the "Ask" buttons) or 'all' (also copy/view icons) (default: 'none')
@@ -541,7 +546,8 @@ The ask bar's elements have these classes:
 | `.markdown-ask-bar__ask` | Group holding the text box and "Ask" buttons (`display: contents` in the default styles) |
 | `.markdown-ask-bar__input` | The text box |
 | `.markdown-ask-bar__button` | Every button; also `__provider` (with `--<provider id>`), `__copy` (with `--copied` / `--error`) or `__view` |
-| `.markdown-ask-bar__label`, `__icon` | Button text and icon slot (rendered only with the `icons` prop) |
+| `.markdown-ask-bar__label` | Button text |
+| `.markdown-ask-bar__icon` | Icon slot at the front of a button (only with the `icons` prop) |
 | `.markdown-ask-bar__separator` | Divider before the markdown buttons |
 | `.markdown-ask-bar__actions` | Group holding the markdown buttons and any children (`display: contents` in the default styles) |
 

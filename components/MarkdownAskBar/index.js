@@ -13,7 +13,7 @@ import {
 
 /**
  * A text box for a question about the page, one "Ask <assistant>" link per AI
- * provider, and markdown buttons ("Copy markdown", optionally "View markdown")
+ * provider, and markdown buttons ("Copy page", optionally "View markdown")
  * after a separator.
  *
  * Each "Ask" link opens the assistant with the page URL followed by the
@@ -43,7 +43,7 @@ import {
  *   has no visible label (default: 'Ask an AI assistant about this page')
  * @param {('copy'|'view')[]} props.actions - Markdown buttons after the
  *   separator, in order (default: ['copy'])
- * @param {string} props.copyButtonText - Copy button label (default: 'Copy markdown')
+ * @param {string} props.copyButtonText - Copy button label (default: 'Copy page')
  * @param {string} props.copiedButtonText - Copy button label after a successful copy (default: 'Copied')
  * @param {string} props.viewButtonText - View button label (default: 'View markdown')
  * @param {('none'|'providers'|'all')} props.icons - Icons at the front of the
@@ -67,7 +67,7 @@ export default function MarkdownAskBar({
   askPrompt = DEFAULT_ASK_PROMPT,
   inputLabel = 'Ask an AI assistant about this page',
   actions = ['copy'],
-  copyButtonText = 'Copy markdown',
+  copyButtonText = 'Copy page',
   copiedButtonText = 'Copied',
   viewButtonText = 'View markdown',
   icons = 'none',
