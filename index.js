@@ -1635,10 +1635,14 @@ function markdownSourcePlugin(context, options = {}) {
       return path.resolve(__dirname, './theme');
     },
 
-    // Default dropdown styles. Scoped to .markdown-actions-dropdown--styled,
-    // so they only apply to MarkdownActionsDropdown without `unstyled`.
+    // Default widget styles. Scoped to .markdown-actions-dropdown--styled and
+    // .markdown-ask-bar--styled, so they only apply to MarkdownActionsDropdown
+    // and MarkdownAskBar without `unstyled`.
     getClientModules() {
-      return [path.resolve(__dirname, './css/markdown-actions-dropdown.css')];
+      return [
+        path.resolve(__dirname, './css/markdown-actions-dropdown.css'),
+        path.resolve(__dirname, './css/markdown-ask-bar.css'),
+      ];
     },
 
     // Expose config to client-side via globalData

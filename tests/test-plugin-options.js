@@ -63,20 +63,28 @@ test('invalid AI options fail when the plugin is created', () => {
   assert.throws(() => markdownSourcePlugin(context, { aiQuestion: '' }), /aiQuestion/);
 });
 
-test('getClientModules ships the default dropdown stylesheet', () => {
+test('getClientModules ships the default widget stylesheets, each scoped to its widget', () => {
   const fs = require('fs');
   const modules = markdownSourcePlugin(context, {}).getClientModules();
-  assert.equal(modules.length, 1);
+  assert.equal(modules.length, 2);
   assert.match(modules[0], /css[\\/]markdown-actions-dropdown\.css$/);
-  assert.ok(fs.existsSync(modules[0]));
-  // Every rule must be scoped to the dropdown: appearance rules to --styled
-  // (so `unstyled` skips them), behavior rules to the open state.
-  const selectors = fs.readFileSync(modules[0], 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('}')
-    .map(block => block.split('{')[0].trim())
-    .filter(Boolean);
-  for (const selector of selectors.flatMap(s => s.split(','))) {
-    assert.match(selector.trim(), /^\.markdown-actions-dropdown--(styled|open)\b/, selector);
-  }
+  assert.match(modules[1], /css[\\/]markdown-ask-bar\.css$/);
+  // Every rule must be scoped to its widget: appearance rules to --styled
+  // (so `unstyled` skips them), behavior rules to the dropdown's open state.
+  const scopes = [
+    /^\.markdown-actions-dropdown--(styled|open)\b/,
+    /^\.markdown-ask-bar--styled\b/,
+  ];
+  modules.forEach((file, i) => {
+    assert.ok(fs.existsSync(file), file);
+    const selectors = fs.readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('}')
+      .map(block => block.split('{')[0].trim())
+      .filter(Boolean);
+    assert.ok(selectors.length > 0, file);
+    for (const selector of selectors.flatMap(s => s.split(','))) {
+      assert.match(selector.trim(), scopes[i], selector);
+    }
+  });
 });
