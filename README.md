@@ -444,6 +444,11 @@ The buttons are links whose URL updates as the reader types, so
 middle-click and "open in new tab" work. Pressing Enter in the box opens the
 first provider. The question clears when the reader moves to another page.
 
+Unlike the other widgets, the ask bar renders on the server, so a page that
+renders it directly doesn't shift when it loads. Its links get their URLs
+once the page hydrates, and it hides itself then if the page isn't under
+`docsPath`.
+
 Set `widgetType: 'ask'` to inject it, or render it yourself (see below).
 `aiPrompt` doesn't apply to the ask bar; to change how it combines the URL
 and question, pass the component an `askPrompt` template with `{url}` and

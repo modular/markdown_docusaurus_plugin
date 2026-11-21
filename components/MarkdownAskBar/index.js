@@ -21,6 +21,10 @@ import {
  * empty. Enter in the box opens the first provider. The links' hrefs update
  * as the reader types, so middle-click and "open in new tab" work too.
  *
+ * It renders on the server too, so the page doesn't shift when it hydrates:
+ * the server and the first browser render show the bar without link URLs,
+ * then it fills them in (or hides itself off `docsPath`) once mounted.
+ *
  * Every element has a `markdown-ask-bar__*` class so sites can style it. The
  * plugin's css/markdown-ask-bar.css adds default layout unless `unstyled` is
  * set.
@@ -67,35 +71,41 @@ export default function MarkdownAskBar({
   unstyled = false,
 }) {
   const [question, setQuestion] = useState('');
-  const { copied, loading, error, isDocsPage, markdownUrl, copyMarkdown } =
+  // False on the server and in the first browser render, so both produce the
+  // same markup; window.location is read only after that.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const { copied, loading, error, markdownUrl, copyMarkdown } =
     useMarkdownCopy(docsPath, supportDirectoryIndex);
 
   // A question is about one page: clear it when the reader moves to another
   // (the component can stay mounted across client-side navigation).
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  const pathname = mounted ? window.location.pathname : null;
   useEffect(() => setQuestion(''), [pathname]);
 
-  if (!isDocsPage) {
+  if (mounted && !pathname.startsWith(docsPath)) {
     return null;
   }
 
   // Absolute URLs, since the assistant fetches them from outside the site.
-  // (isDocsPage is false during SSR, so window is always defined here.)
+  // Before mounting, the links have no URL yet (href undefined).
   const aiLinks = buildAiLinks({
     aiProviders,
     aiPrompt: askPrompt,
     question: question.trim() || aiQuestion,
-    ...resolveContextUrls({
-      origin: window.location.origin,
-      pathname,
-      supportDirectoryIndex,
-    }),
-  });
+    ...(mounted
+      ? resolveContextUrls({
+          origin: window.location.origin,
+          pathname,
+          supportDirectoryIndex,
+        })
+      : { pageUrl: '', markdownUrl: '' }),
+  }).map((link) => (mounted ? link : { ...link, href: undefined }));
 
   // Enter opens the first assistant. window.open runs inside the key press,
   // so popup blockers allow it. Skip Enter that confirms an IME composition.
   const handleInputKeyDown = (event) => {
-    if (event.key !== 'Enter' || event.nativeEvent.isComposing || !aiLinks.length) return;
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing || !aiLinks[0]?.href) return;
     event.preventDefault();
     window.open(aiLinks[0].href, '_blank', 'noopener,noreferrer');
   };
@@ -134,7 +144,7 @@ export default function MarkdownAskBar({
         <a
           key="view"
           className={classes('markdown-ask-bar__button', 'markdown-ask-bar__view', buttonClassName)}
-          href={markdownUrl}
+          href={mounted ? markdownUrl : undefined}
           target="_blank"
           rel="noopener noreferrer"
         >
