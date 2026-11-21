@@ -15,6 +15,13 @@ import { usePluginData } from '@docusaurus/useGlobalData';
 import { createRoot } from 'react-dom/client';
 import MarkdownCopyButton from '../components/MarkdownCopyButton';
 import MarkdownActionsDropdown from '../components/MarkdownActionsDropdown';
+import MarkdownAskBar from '../components/MarkdownAskBar';
+
+const WIDGETS = {
+  button: MarkdownCopyButton,
+  dropdown: MarkdownActionsDropdown,
+  ask: MarkdownAskBar,
+};
 
 export default function Root({ children }) {
   const { hash, pathname } = useLocation();
@@ -29,6 +36,7 @@ export default function Root({ children }) {
   const supportDirectoryIndex = pluginData.supportDirectoryIndex || false;
   const aiProviders = pluginData.aiProviders || [];
   const aiPrompt = pluginData.aiPrompt;
+  const aiQuestion = pluginData.aiQuestion;
 
   // Scroll to hash on page load (handles deep links)
   useEffect(() => {
@@ -70,10 +78,9 @@ export default function Root({ children }) {
       container.className = 'markdown-actions-container';
       targetContainer.appendChild(container);
 
-      // Select component based on widgetType config
-      const WidgetComponent = widgetType === 'dropdown' 
-        ? MarkdownActionsDropdown 
-        : MarkdownCopyButton;
+      // Select component based on widgetType config (unknown values get the
+      // copy button, as before)
+      const WidgetComponent = WIDGETS[widgetType] || MarkdownCopyButton;
 
       // Render React component into container
       // Pass config as props since component is outside Docusaurus React tree
@@ -87,6 +94,7 @@ export default function Root({ children }) {
           buttonText={copyButtonText}
           aiProviders={aiProviders}
           aiPrompt={aiPrompt}
+          aiQuestion={aiQuestion}
         />
       );
     };
@@ -96,7 +104,7 @@ export default function Root({ children }) {
     timeouts.forEach(delay => {
       setTimeout(injectWidget, delay);
     });
-  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, aiProviders, aiPrompt]);
+  }, [pathname, docsPath, widgetType, containerSelector, copyButtonText, copiedButtonText, supportDirectoryIndex, aiProviders, aiPrompt, aiQuestion]);
 
   return <>{children}</>;
 }

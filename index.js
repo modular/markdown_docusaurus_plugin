@@ -1596,7 +1596,8 @@ function markdownSourcePlugin(context, options = {}) {
   // Configurable options with defaults for backwards compatibility
   const docsPath = options.docsPath || '/docs/';
   const docsDirName = options.docsDir || 'docs';
-  // Widget type: 'button' (simple copy button) or 'dropdown' (with multiple actions)
+  // Widget type: 'button' (simple copy button), 'dropdown' (with multiple
+  // actions) or 'ask' (question box with "Ask <assistant>" buttons)
   const widgetType = options.widgetType || 'button';
   // CSS selector for where to inject the widget
   const containerSelector = options.containerSelector || 'article .markdown header';
