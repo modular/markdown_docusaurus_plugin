@@ -46,8 +46,9 @@ import {
  * @param {string} props.copyButtonText - Copy button label (default: 'Copy markdown')
  * @param {string} props.copiedButtonText - Copy button label after a successful copy (default: 'Copied')
  * @param {string} props.viewButtonText - View button label (default: 'View markdown')
- * @param {boolean} props.showIcons - Show provider, copy and view icons in the
- *   buttons (default: false)
+ * @param {('none'|'providers'|'all')} props.icons - Icons at the front of the
+ *   buttons: none, the assistants' marks on the "Ask" buttons only, or those
+ *   plus the copy and view icons (default: 'none')
  * @param {string} props.buttonClassName - Extra classes for every button
  *   (default: Infima's 'button button--secondary button--sm'; pass '' to style them yourself)
  * @param {string} props.className - Extra classes for the root element
@@ -65,7 +66,7 @@ export default function MarkdownAskBar({
   copyButtonText = 'Copy markdown',
   copiedButtonText = 'Copied',
   viewButtonText = 'View markdown',
-  showIcons = false,
+  icons = 'none',
   buttonClassName = 'button button--secondary button--sm',
   className = '',
   unstyled = false,
@@ -111,6 +112,8 @@ export default function MarkdownAskBar({
   };
 
   const classes = (...names) => names.filter(Boolean).join(' ');
+  const providerIcons = icons === 'providers' || icons === 'all';
+  const actionIcons = icons === 'all';
 
   const renderAction = (action) => {
     if (action === 'copy') {
@@ -128,7 +131,7 @@ export default function MarkdownAskBar({
           onClick={copyMarkdown}
           aria-disabled={loading || copied || !!error}
         >
-          {showIcons && (
+          {actionIcons && (
             <span className="markdown-ask-bar__icon">
               {copied ? <CheckIcon size={16} /> : <CopyIcon size={16} />}
             </span>
@@ -148,7 +151,7 @@ export default function MarkdownAskBar({
           target="_blank"
           rel="noopener noreferrer"
         >
-          {showIcons && (
+          {actionIcons && (
             <span className="markdown-ask-bar__icon">
               <ViewIcon size={16} />
             </span>
@@ -196,7 +199,7 @@ export default function MarkdownAskBar({
               target="_blank"
               rel="noopener noreferrer"
             >
-              {showIcons && (
+              {providerIcons && (
                 <span className="markdown-ask-bar__icon">
                   <ProviderIcon id={link.id} size={16} />
                 </span>
