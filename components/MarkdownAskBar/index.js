@@ -4,6 +4,7 @@ import CopyIcon from '@theme/MarkdownCopyIcon';
 import CheckIcon from '@theme/MarkdownCheckIcon';
 import ViewIcon from '@theme/MarkdownViewIcon';
 import ProviderIcon from '@theme/MarkdownProviderIcon';
+import ExternalLinkIcon from '@theme/MarkdownExternalLinkIcon';
 import {
   buildAiLinks,
   resolveContextUrls,
@@ -49,6 +50,8 @@ import {
  * @param {('none'|'providers'|'all')} props.icons - Icons at the front of the
  *   buttons: none, the assistants' marks on the "Ask" buttons only, or those
  *   plus the copy and view icons (default: 'none')
+ * @param {boolean} props.externalIcon - Show an external-link icon at the end
+ *   of each "Ask" button, since it opens a new tab (default: true)
  * @param {string} props.buttonClassName - Extra classes for every button
  *   (default: Infima's 'button button--secondary button--sm'; pass '' to style them yourself)
  * @param {string} props.className - Extra classes for the root element
@@ -67,6 +70,7 @@ export default function MarkdownAskBar({
   copiedButtonText = 'Copied',
   viewButtonText = 'View markdown',
   icons = 'none',
+  externalIcon = true,
   buttonClassName = 'button button--secondary button--sm',
   className = '',
   unstyled = false,
@@ -205,6 +209,11 @@ export default function MarkdownAskBar({
                 </span>
               )}
               <span className="markdown-ask-bar__label">{link.askLabel}</span>
+              {externalIcon && (
+                <span className="markdown-ask-bar__external">
+                  <ExternalLinkIcon size={12} />
+                </span>
+              )}
             </a>
           ))}
         </div>

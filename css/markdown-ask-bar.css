@@ -57,9 +57,14 @@
   white-space: nowrap;
 }
 
-.markdown-ask-bar--styled .markdown-ask-bar__icon {
+.markdown-ask-bar--styled .markdown-ask-bar__icon,
+.markdown-ask-bar--styled .markdown-ask-bar__external {
   display: inline-flex;
   flex: none;
+}
+
+.markdown-ask-bar--styled .markdown-ask-bar__external {
+  opacity: 0.7;
 }
 
 .markdown-ask-bar--styled .markdown-ask-bar__separator {
